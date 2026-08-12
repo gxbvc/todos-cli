@@ -91,6 +91,34 @@ class TodosCliTest < Minitest::Test
         method: "PATCH",
         target: "/tasks/9.json",
         body: { "response" => { "ein" => "12-345" }, "notes" => "Done" }
+      },
+      {
+        args: %w[areas create --user 7 -t BrightView --position 2 --active true],
+        method: "POST",
+        target: "/users/7/areas.json",
+        body: { "area" => { "title" => "BrightView", "position" => 2, "active" => true } }
+      },
+      {
+        args: %w[areas create --user 7 -t BrightView],
+        method: "POST",
+        target: "/users/7/areas.json",
+        body: { "area" => { "title" => "BrightView" } }
+      },
+      {
+        args: %w[projects create --user 7 -t Onboarding --area 3 --status active --position 1],
+        method: "POST",
+        target: "/users/7/projects.json",
+        body: {
+          "project" => {
+            "title" => "Onboarding", "area_id" => "3", "status" => "active", "position" => 1
+          }
+        }
+      },
+      {
+        args: %w[projects create --user 7 -t Default-area-project],
+        method: "POST",
+        target: "/users/7/projects.json",
+        body: { "project" => { "title" => "Default-area-project" } }
       }
     ]
 
@@ -195,10 +223,11 @@ class TodosCliTest < Minitest::Test
   end
 
   def test_missing_config_is_still_a_json_failure
+    # Empty strings beat Dotenv.load (which fills unset vars from the tool .env).
     stdout, _stderr, status = Open3.capture3(
       {
-        "TODOS_API_KEY" => nil,
-        "TODOS_BASE_URL" => nil,
+        "TODOS_API_KEY" => "",
+        "TODOS_BASE_URL" => "",
         "BUNDLE_GEMFILE" => nil
       },
       EXECUTABLE, "me", chdir: Dir.tmpdir
@@ -235,6 +264,8 @@ class TodosCliTest < Minitest::Test
       areas: [{
         id: 1,
         title: "Operations",
+        position: 0,
+        active: true,
         projects: [
           { id: 3, title: "Tax", status: "active", tasks: [
             { id: 9, project_id: 3, title: "W-9", status: "open" },
@@ -254,5 +285,18 @@ class TodosCliTest < Minitest::Test
     output, = run_cli("projects", "list", "--user", "7", server: server)
     assert_equal "Operations", output["data"][0]["area_title"]
     refute output["data"][0].key?("tasks")
+    assert_equal "/users/7.json", server.requests.pop[:target]
+
+    server = StubServer.new(body: JSON.generate(board))
+    output, = run_cli("areas", "list", "--user", "7", server: server)
+    assert_equal true, output["ok"]
+    assert_equal [{
+      "id" => 1,
+      "title" => "Operations",
+      "position" => 0,
+      "active" => true,
+      "project_count" => 1
+    }], output["data"]
+    assert_equal "/users/7.json", server.requests.pop[:target]
   end
 end

@@ -9,13 +9,17 @@ require "todos/error"
 module Todos
   class CLI
     STATUSES = %w[open submitted approved canceled].freeze
+    PROJECT_STATUSES = %w[active waiting someday completed].freeze
     USAGE = <<~TEXT.freeze
       Usage:
         todos-cli me
         todos-cli users list
         todos-cli users show <id|email>
         todos-cli board [--user <id|email>]
+        todos-cli areas list --user <id|email>
+        todos-cli areas create --user <id|email> -t TITLE [--position N] [--active true|false]
         todos-cli projects list --user <id|email>
+        todos-cli projects create --user <id|email> -t TITLE [--area ID] [--status STATUS] [--position N]
         todos-cli tasks list [--user <id|email>] [--project ID] [--status STATUS]
         todos-cli tasks get <id> [--user <id|email>]
         todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description HTML] [--due DATE] [--schema JSON|@file]
@@ -26,6 +30,11 @@ module Todos
         todos-cli tasks reopen <id> [--user <id|email>] [--note TEXT]
         todos-cli tasks cancel <id> [--user <id|email>]
         todos-cli tasks respond <id> [--user <id|email>] --field key=value [--field key=value] [--notes TEXT]
+
+      Write every task as a next physical action (David Allen, GTD): the title
+      names the one physical or mental step to take next, and the description
+      gives the reader everything needed to do it without opening any other
+      file, ticket, or link.
     TEXT
 
     def self.run(args, client: Client.new, out: $stdout, err: $stderr)
@@ -55,6 +64,7 @@ module Todos
       when "me" then me
       when "users" then users
       when "board" then board
+      when "areas" then areas
       when "projects" then projects
       when "tasks" then tasks
       when "help", "-h", "--help", nil then { usage: USAGE }
@@ -95,13 +105,65 @@ module Todos
       board_for(options[:user])
     end
 
-    def projects
-      fail_usage!("Usage: todos-cli projects list --user <id|email>") unless @args.shift == "list"
+    def areas
+      subcommand = @args.shift
+      case subcommand
+      when "list" then areas_list
+      when "create" then areas_create
+      else
+        fail_usage!("Usage: todos-cli areas <list|create>")
+      end
+    end
 
+    def areas_list
+      options = parse_options(@args, user: true)
+      ensure_no_args!
+      user_id = require_user!(options[:user])
+      flatten_areas(board_for(user_id))
+    end
+
+    def areas_create
+      options = parse_options(@args, user: true, title: true, position: true, active: true)
+      ensure_no_args!
+      user_id = require_user!(options[:user])
+      title = required_option!(options[:title], "--title/-t")
+      area = { title: title }
+      area[:position] = options[:position] if options.key?(:position)
+      area[:active] = options[:active] if options.key?(:active)
+      request(:post, "/users/#{user_id}/areas.json", body: { area: area })
+    end
+
+    def projects
+      subcommand = @args.shift
+      case subcommand
+      when "list" then projects_list
+      when "create" then projects_create
+      else
+        fail_usage!("Usage: todos-cli projects <list|create>")
+      end
+    end
+
+    def projects_list
       options = parse_options(@args, user: true)
       ensure_no_args!
       user_id = require_user!(options[:user])
       flatten_projects(board_for(user_id))
+    end
+
+    def projects_create
+      options = parse_options(@args, user: true, title: true, area: true, status: true, position: true)
+      ensure_no_args!
+      user_id = require_user!(options[:user])
+      title = required_option!(options[:title], "--title/-t")
+      if options[:status] && !PROJECT_STATUSES.include?(options[:status])
+        raise Error.new("Status must be one of: #{PROJECT_STATUSES.join(", ")}", code: "INVALID_ARGUMENT")
+      end
+
+      project = { title: title }
+      project[:area_id] = options[:area] if options.key?(:area)
+      project[:status] = options[:status] if options.key?(:status)
+      project[:position] = options[:position] if options.key?(:position)
+      request(:post, "/users/#{user_id}/projects.json", body: { project: project })
     end
 
     def tasks
@@ -291,6 +353,21 @@ module Todos
       request(:get, "/users/#{resolve_user(user)}.json")
     end
 
+    def flatten_areas(payload)
+      areas = payload.is_a?(Hash) ? payload["areas"] : nil
+      raise Error.new("Board response did not include areas", code: "INVALID_RESPONSE") unless areas.is_a?(Array)
+
+      areas.map do |area|
+        {
+          "id" => area["id"],
+          "title" => area["title"],
+          "position" => area["position"],
+          "active" => area["active"],
+          "project_count" => Array(area["projects"]).size
+        }
+      end
+    end
+
     def flatten_projects(payload)
       areas = payload.is_a?(Hash) ? payload["areas"] : nil
       raise Error.new("Board response did not include areas", code: "INVALID_RESPONSE") unless areas.is_a?(Array)
@@ -327,10 +404,17 @@ module Todos
         parser.on("-t", "--title TITLE") { |value| options[:title] = value }
       end
       parser.on("--project ID") { |value| options[:project] = value } if allowed[:project]
+      parser.on("--area ID") { |value| options[:area] = value } if allowed[:area]
       parser.on("--description HTML") { |value| options[:description] = value } if allowed[:description]
       parser.on("--due DATE") { |value| options[:due] = value } if allowed[:due]
       parser.on("--schema JSON") { |value| options[:schema] = value } if allowed[:schema]
       parser.on("--status STATUS") { |value| options[:status] = value } if allowed[:status]
+      if allowed[:position]
+        parser.on("--position N") { |value| options[:position] = Integer(value) }
+      end
+      if allowed[:active]
+        parser.on("--active VALUE") { |value| options[:active] = parse_bool(value, "--active") }
+      end
       parser.on("--field KEY=VALUE") { |value| (options[:fields] ||= []) << value } if allowed[:fields]
       parser.on("--notes TEXT") { |value| options[:notes] = value } if allowed[:notes]
       parser.on("--note TEXT") { |value| options[:note] = value } if allowed[:note]
@@ -338,6 +422,17 @@ module Todos
       options
     rescue OptionParser::ParseError => e
       raise Error.new(e.message, code: "INVALID_ARGUMENT")
+    rescue ArgumentError => e
+      raise Error.new(e.message, code: "INVALID_ARGUMENT")
+    end
+
+    def parse_bool(value, name)
+      case value.to_s.downcase
+      when "true", "1", "yes" then true
+      when "false", "0", "no" then false
+      else
+        raise Error.new("#{name} must be true or false", code: "INVALID_ARGUMENT")
+      end
     end
 
     def parse_schema(value)

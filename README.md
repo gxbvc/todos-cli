@@ -76,16 +76,27 @@ todos-cli users show <id|email>
 User listing and cross-user boards require an admin key. Email references are
 resolved through `users list` once per process.
 
-### Boards and projects
+### Boards, areas, and projects
 
 ```bash
 todos-cli board
 todos-cli board --user andy@example.com
+todos-cli areas list --user andy@example.com
+todos-cli areas create --user andy@example.com -t "BrightView"
+todos-cli areas create --user 12 -t "BrightView" --position 1 --active true
 todos-cli projects list --user andy@example.com
+todos-cli projects create --user andy@example.com -t "Onboarding"
+todos-cli projects create --user 12 -t "Tax filings" --area 3 --status active --position 0
 ```
 
-Without `--user`, `board` reads the authenticated user's own board. Projects
-are flattened from the board tree and include `area_id` and `area_title`.
+Without `--user`, `board` reads the authenticated user's own board. `areas list`
+and `projects list` require `--user` and flatten from that user's board
+(`GET /users/:id.json`). Areas include `id`, `title`, `position`, `active`, and
+`project_count`. Projects include `area_id` and `area_title`.
+
+Area and project create are admin nested routes and require `--user`. Omitting
+`--area` on project create lets the server assign the user's default area.
+Valid project statuses are `active`, `waiting`, `someday`, and `completed`.
 
 ### Read tasks
 
