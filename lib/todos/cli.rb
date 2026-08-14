@@ -35,6 +35,11 @@ module Todos
       names the one physical or mental step to take next, and the description
       gives the reader everything needed to do it without opening any other
       file, ticket, or link.
+
+      Pre-digest. If you can make the call, make it — do not file a "comment
+      on ticket N" todo. Human todos are a physical action, a look-and-riff,
+      or a one-tap radio pick (recommended first, short examples). Three
+      sentences max. No file:// links. No ticket archaeology in the body.
     TEXT
 
     def self.run(args, client: Client.new, out: $stdout, err: $stderr)
