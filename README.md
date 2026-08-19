@@ -40,9 +40,8 @@ ln -sf ~/tools/todos-cli/todos-cli ~/bin/todos-cli
 todos-cli --help
 ```
 
-The executable resolves its own real path, loads the Gemfile and `.env` from
-the tool directory, and therefore works through the symlink from any current
-directory.
+The executable resolves its own real path and loads `.env` from the tool
+directory, so it works through the symlink from any current directory.
 
 ## Output
 

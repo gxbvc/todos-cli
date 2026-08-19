@@ -86,6 +86,11 @@ module CLITestHelpers
       "TODOS_API_KEY" => "test-key",
       "TODOS_BASE_URL" => server.url,
       "BUNDLE_GEMFILE" => nil,
+      "BUNDLE_BIN_PATH" => nil,
+      "BUNDLER_SETUP" => nil,
+      "BUNDLER_VERSION" => nil,
+      "RUBYLIB" => nil,
+      "RUBYOPT" => nil,
       "HTTP_PROXY" => nil,
       "http_proxy" => nil
     }.merge(env)

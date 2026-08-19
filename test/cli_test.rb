@@ -214,7 +214,10 @@ class TodosCliTest < Minitest::Test
       board = { user: { id: 1, email: "me@example.com" }, areas: [], tallies: {} }
       server = StubServer.new(body: JSON.generate(board))
 
-      output, _stderr, status = run_cli("me", server: server, cwd: foreign_cwd, executable: link)
+      output, _stderr, status = run_cli(
+        "me", server: server, cwd: foreign_cwd, executable: link,
+        env: { "BUNDLE_GEMFILE" => File.join(foreign_cwd, "Gemfile") }
+      )
 
       assert status.success?
       assert_equal({ "id" => 1, "email" => "me@example.com" }, output["data"])
@@ -223,7 +226,7 @@ class TodosCliTest < Minitest::Test
   end
 
   def test_missing_config_is_still_a_json_failure
-    # Empty strings beat Dotenv.load (which fills unset vars from the tool .env).
+    # Empty strings beat the tool .env, which only fills unset variables.
     stdout, _stderr, status = Open3.capture3(
       {
         "TODOS_API_KEY" => "",
