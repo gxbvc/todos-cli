@@ -7,25 +7,27 @@ class TodosCliTest < Minitest::Test
     schema = [{ "key" => "ein", "label" => "EIN", "type" => "text", "placeholder" => "" }]
     cases = [
       {
-        args: %w[tasks create --user 7 -t Send-W9 --project 3 --description <p>Hi</p> --due 2026-08-01 --schema] + [JSON.generate(schema)],
+        args: %w[tasks create --user 7 -t Send-W9 --project 3 --description <p>Hi</p> --due 2026-08-01 --estimate 15 --source-url https://tickets.gxb.vc/123 --schema] + [JSON.generate(schema)],
         method: "POST",
         target: "/users/7/tasks.json",
         body: {
           "task" => {
             "title" => "Send-W9", "project_id" => "3", "description" => "<p>Hi</p>",
-            "due_date" => "2026-08-01", "fields_schema" => schema
+            "due_date" => "2026-08-01", "estimated_minutes" => 15,
+            "source_url" => "https://tickets.gxb.vc/123", "fields_schema" => schema
           }
         }
       },
       {
-        args: %w[tasks update 9 --user 7 --title Revised --project 4 --description <p>New</p> --due 2026-09-01 --schema] +
+        args: %w[tasks update 9 --user 7 --title Revised --project 4 --description <p>New</p> --due 2026-09-01 --estimate 30 --source-url https://tickets.gxb.vc/456 --schema] +
           [JSON.generate(schema)] + %w[--field ein=12-345 --notes Ready],
         method: "PATCH",
         target: "/users/7/tasks/9.json",
         body: {
           "task" => {
             "title" => "Revised", "project_id" => "4", "description" => "<p>New</p>",
-            "due_date" => "2026-09-01", "fields_schema" => schema
+            "due_date" => "2026-09-01", "estimated_minutes" => 30,
+            "source_url" => "https://tickets.gxb.vc/456", "fields_schema" => schema
           },
           "response" => { "ein" => "12-345" },
           "notes" => "Ready"
@@ -141,6 +143,45 @@ class TodosCliTest < Minitest::Test
         assert_equal "application/json", request[:headers]["content-type"]
       end
     end
+  end
+
+  def test_estimate_and_source_url_must_be_valid
+    [
+      [ %w[tasks create --user 7 -t Send-W9 --estimate nope], /invalid value for Integer/ ],
+      [ %w[tasks create --user 7 -t Send-W9 --estimate 0], /--estimate must be greater than 0/ ],
+      [ %w[tasks create --user 7 -t Send-W9 --source-url tickets.gxb.vc/123], /--source-url must be an http\/https URL/ ]
+    ].each do |args, message|
+      output, _stderr, status = run_cli(*args, server: StubServer.new)
+
+      refute status.success?, args.join(" ")
+      assert_equal false, output["ok"]
+      assert_equal "INVALID_ARGUMENT", output["code"]
+      assert_match message, output["error"]
+    end
+  end
+
+  def test_empty_estimate_and_source_url_clear_their_fields
+    {
+      "--estimate" => "estimated_minutes",
+      "--source-url" => "source_url"
+    }.each do |flag, attribute|
+      server = StubServer.new({})
+      output, = run_cli("tasks", "update", "9", "--user", "7", "--title", "Revised", flag, "", server: server)
+
+      assert_equal true, output["ok"]
+      assert_nil json_body(server.requests.pop).dig("task", attribute)
+    end
+  end
+
+  def test_source_url_is_stripped_before_sending
+    server = StubServer.new({})
+    output, = run_cli(
+      "tasks", "create", "--user", "7", "--title", "Send W-9",
+      "--source-url", "  https://x.com/1  ", server: server
+    )
+
+    assert_equal true, output["ok"]
+    assert_equal "https://x.com/1", json_body(server.requests.pop).dig("task", "source_url")
   end
 
   def test_email_user_is_resolved_once_then_used_in_nested_route

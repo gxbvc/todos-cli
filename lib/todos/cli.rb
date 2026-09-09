@@ -2,6 +2,7 @@
 
 require "json"
 require "optparse"
+require "uri"
 
 require "todos/client"
 require "todos/error"
@@ -22,8 +23,8 @@ module Todos
         todos-cli projects create --user <id|email> -t TITLE [--area ID] [--status STATUS] [--position N]
         todos-cli tasks list [--user <id|email>] [--project ID] [--status STATUS]
         todos-cli tasks get <id> [--user <id|email>]
-        todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description HTML] [--due DATE] [--schema JSON|@file]
-        todos-cli tasks update <id> --user <id|email> [--title TITLE] [--project ID] [--description HTML] [--due DATE] [--schema JSON|@file] [--field key=value] [--notes TEXT]
+        todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description HTML] [--due DATE] [--estimate N] [--source-url URL] [--schema JSON|@file]
+        todos-cli tasks update <id> --user <id|email> [--title TITLE] [--project ID] [--description HTML] [--due DATE] [--estimate N] [--source-url URL] [--schema JSON|@file] [--field key=value] [--notes TEXT]
         todos-cli tasks destroy <id> --user <id|email>
         todos-cli tasks submit <id> [--user <id|email>] [--field key=value]
         todos-cli tasks approve <id> --user <id|email>
@@ -31,15 +32,8 @@ module Todos
         todos-cli tasks cancel <id> [--user <id|email>]
         todos-cli tasks respond <id> [--user <id|email>] --field key=value [--field key=value] [--notes TEXT]
 
-      Write every task as a next physical action (David Allen, GTD): the title
-      names the one physical or mental step to take next, and the description
-      gives the reader everything needed to do it without opening any other
-      file, ticket, or link.
-
-      Pre-digest. If you can make the call, make it — do not file a "comment
-      on ticket N" todo. Human todos are a physical action, a look-and-riff,
-      or a one-tap radio pick (recommended first, short examples). Three
-      sentences max. No file:// links. No ticket archaeology in the body.
+      Every task must be a next physical action.
+      Rules and examples: write-human-todos skill.
     TEXT
 
     def self.run(args, client: Client.new, out: $stdout, err: $stderr)
@@ -212,7 +206,8 @@ module Todos
     def tasks_create
       options = parse_options(
         @args,
-        user: true, title: true, project: true, description: true, due: true, schema: true
+        user: true, title: true, project: true, description: true, due: true, estimate: true,
+        source_url: true, schema: true
       )
       ensure_no_args!
       user_id = require_user!(options[:user])
@@ -221,6 +216,8 @@ module Todos
       task[:project_id] = options[:project] if options.key?(:project)
       task[:description] = options[:description] if options.key?(:description)
       task[:due_date] = options[:due] if options.key?(:due)
+      task[:estimated_minutes] = options[:estimate] if options.key?(:estimate)
+      task[:source_url] = options[:source_url] if options.key?(:source_url)
       task[:fields_schema] = parse_schema(options[:schema]) if options.key?(:schema)
       request(:post, "/users/#{user_id}/tasks.json", body: { task: task })
     end
@@ -230,7 +227,7 @@ module Todos
       options = parse_options(
         @args,
         user: true, title: true, project: true, description: true, due: true,
-        schema: true, fields: true, notes: true
+        estimate: true, source_url: true, schema: true, fields: true, notes: true
       )
       ensure_no_args!
       user_id = require_user!(options[:user])
@@ -240,6 +237,8 @@ module Todos
       task[:project_id] = options[:project] if options.key?(:project)
       task[:description] = options[:description] if options.key?(:description)
       task[:due_date] = options[:due] if options.key?(:due)
+      task[:estimated_minutes] = options[:estimate] if options.key?(:estimate)
+      task[:source_url] = options[:source_url] if options.key?(:source_url)
       task[:fields_schema] = parse_schema(options[:schema]) if options.key?(:schema)
 
       body = {}
@@ -412,6 +411,8 @@ module Todos
       parser.on("--area ID") { |value| options[:area] = value } if allowed[:area]
       parser.on("--description HTML") { |value| options[:description] = value } if allowed[:description]
       parser.on("--due DATE") { |value| options[:due] = value } if allowed[:due]
+      parser.on("--estimate N") { |value| options[:estimate] = positive_integer(value, "--estimate") } if allowed[:estimate]
+      parser.on("--source-url URL") { |value| options[:source_url] = source_url(value) } if allowed[:source_url]
       parser.on("--schema JSON") { |value| options[:schema] = value } if allowed[:schema]
       parser.on("--status STATUS") { |value| options[:status] = value } if allowed[:status]
       if allowed[:position]
@@ -429,6 +430,31 @@ module Todos
       raise Error.new(e.message, code: "INVALID_ARGUMENT")
     rescue ArgumentError => e
       raise Error.new(e.message, code: "INVALID_ARGUMENT")
+    end
+
+    def positive_integer(value, name)
+      return if value.strip.empty?
+
+      integer = Integer(value)
+      raise Error.new("#{name} must be greater than 0", code: "INVALID_ARGUMENT") unless integer.positive?
+
+      integer
+    end
+
+    def source_url(value)
+      value = value.strip
+      return if value.empty?
+
+      # Mirrors Task#source_url_is_http server-side: userinfo is rejected so a
+      # https://trusted.example@evil.example/ link cannot look trustworthy.
+      uri = URI.parse(value)
+      unless uri.is_a?(URI::HTTP) && uri.host && uri.userinfo.nil?
+        raise Error.new("--source-url must be an http/https URL", code: "INVALID_ARGUMENT")
+      end
+
+      value
+    rescue URI::InvalidURIError
+      raise Error.new("--source-url must be an http/https URL", code: "INVALID_ARGUMENT")
     end
 
     def parse_bool(value, name)
