@@ -191,6 +191,11 @@ one line each for A3, B2, D5, D9, D12, D14, D15.`
 carrying the exhibit's title, what it currently shows, and why it is in
 question. The reader grades what is on the screen, not what they remember.
 
+**Bad:** `Review items 343, 159, and 1981`  
+**Good:** one todo (or three) that inlines each item's title, the one fact that
+decides it, and a yes/no or radio. If they must open the record, link the
+exact `https://` URL where they act, not the id.
+
 **Good bar:**
 
 `Claim your Google Business Profile and start verification today`  
