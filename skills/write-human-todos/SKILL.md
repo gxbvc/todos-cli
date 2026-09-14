@@ -77,6 +77,45 @@ bare `decide` with `Reply yes or no to …`. Require the next doable step.
   be a problem`.
 - Never put secrets in prose; request them through a password field.
 
+### Self-contained or not filed
+
+A todo is read cold, weeks later, by someone who has forgotten the project. It
+must carry everything needed to decide and act. If the reader has to look
+something up to start, the todo is not finished; you are.
+
+**Never name a thing without carrying the thing.** These all fail:
+
+| Written | Why it fails |
+|---|---|
+| `one line each for A3, B2, D5, D9` | Bare labels. The reader cannot judge what they cannot see. |
+| `In Notes, type …` | Which notes? No link, no app, no file. |
+| `Leave the Taiwan wording blank` | An unexplained proper noun doing load-bearing work. |
+| `Do this in the Wave 1 workbook, not the old file` | Two unnamed files, one defined only as "not the other one". |
+| `Reply on the existing thread` | Which thread, in which mailbox, from when? |
+
+Fix by **inlining or linking, and preferably both**:
+
+- **Inline the decision material.** If they must grade seven exhibits, put the
+  seven titles in the description, one per line, each with the one fact that
+  decides it. A decision todo carries its own evidence.
+- **Link with a URL that opens for them.** `https://` only. A ticket number,
+  a plan path, a filename, or a `file://` link is not a link.
+- **Spell out every proper noun on first use.** `Taiwan` becomes
+  `the Taiwan question (does China blockade or strike Taiwan before 30 Jun 2027)`.
+- **If you cannot inline it, you cannot file it.** Go find the thing first, or
+  file the todo that produces it instead.
+
+**Do not encode someone else's state.** `Leave it blank for Owen` and
+`Send Owen the HTML` both rot silently the moment Owen moves. Write what the
+reader does with what is true now, and re-check any todo that waits on a third
+party before you hand it back to them.
+
+**Do not depend on a thing that does not exist yet.** `Send the report` when no
+report exists is two todos, and only the first one is fileable today.
+
+The test: hand the todo to a competent stranger with no access to your chat,
+your files, or your memory. If they cannot start within 10 seconds, rewrite it.
+
 ### Estimate and source (optional)
 
 Both are `todos-cli` flags, not description text.
@@ -120,8 +159,12 @@ Before `tasks create`, delete or fix:
 2. Any sentence describing what you did or found.
 3. Anything they must open to resolve: a ticket number, a plan path, a
    `file://` link, `as discussed`.
-4. Any decision you could have made yourself.
-5. Any hedge: `might`, `probably`, `you may want to`.
+4. Any bare identifier (`A3`, `D12`, `the Wave 1 workbook`, `the existing
+   thread`) whose content is not inlined or linked with an `https://` URL.
+5. Any proper noun a stranger would have to ask about.
+6. Any instruction that depends on what a third party has or has not done yet.
+7. Any decision you could have made yourself.
+8. Any hedge: `might`, `probably`, `you may want to`.
 
 Then verify: reading only the title and the first sentence, do they know what
 to physically do, and where? If no, rewrite it.
@@ -141,6 +184,12 @@ account ID`. Include the command, known profile/region, relevant line, and why.
 **Good:** Project outcome: “Anthropic account funded with auto-reload on”; todo:
 `Put money on the Anthropic account and turn on auto-reload`, with URL, amount
 guidance, and toggle location.
+
+**Bad:** `Type keep, rebuild, or cut for each Wave 1 exhibit` / body: `In Notes,
+one line each for A3, B2, D5, D9, D12, D14, D15.`  
+**Good:** one todo per exhibit, or one todo with a radio per exhibit, each
+carrying the exhibit's title, what it currently shows, and why it is in
+question. The reader grades what is on the screen, not what they remember.
 
 **Good bar:**
 
