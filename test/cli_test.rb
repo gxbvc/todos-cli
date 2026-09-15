@@ -173,6 +173,31 @@ class TodosCliTest < Minitest::Test
     end
   end
 
+  def test_create_warns_on_empty_description_and_still_creates
+    server = StubServer.new({})
+    output, stderr, status = run_cli(
+      "tasks", "create", "--user", "7", "-t", "Send W-9",
+      server: server
+    )
+
+    assert status.success?
+    assert_equal true, output["ok"]
+    assert_match(/GTD warn \(empty description\)/, stderr)
+    assert_match(/--force/, stderr)
+  end
+
+  def test_create_force_skips_gtd_warn
+    server = StubServer.new({})
+    output, stderr, status = run_cli(
+      "tasks", "create", "--user", "7", "-t", "test todo", "--force",
+      server: server
+    )
+
+    assert status.success?
+    assert_equal true, output["ok"]
+    refute_match(/GTD warn/, stderr)
+  end
+
   def test_source_url_is_stripped_before_sending
     server = StubServer.new({})
     output, = run_cli(

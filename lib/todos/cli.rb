@@ -23,7 +23,7 @@ module Todos
         todos-cli projects create --user <id|email> -t TITLE [--area ID] [--status STATUS] [--position N]
         todos-cli tasks list [--user <id|email>] [--project ID] [--status STATUS]
         todos-cli tasks get <id> [--user <id|email>]
-        todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description HTML] [--due DATE] [--estimate N] [--source-url URL] [--schema JSON|@file]
+        todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description HTML] [--due DATE] [--estimate N] [--source-url URL] [--schema JSON|@file] [--force]
         todos-cli tasks update <id> --user <id|email> [--title TITLE] [--project ID] [--description HTML] [--due DATE] [--estimate N] [--source-url URL] [--schema JSON|@file] [--field key=value] [--notes TEXT]
         todos-cli tasks destroy <id> --user <id|email>
         todos-cli tasks submit <id> [--user <id|email>] [--field key=value]
@@ -207,11 +207,12 @@ module Todos
       options = parse_options(
         @args,
         user: true, title: true, project: true, description: true, due: true, estimate: true,
-        source_url: true, schema: true
+        source_url: true, schema: true, force: true
       )
       ensure_no_args!
       user_id = require_user!(options[:user])
       title = required_option!(options[:title], "--title/-t")
+      warn_gtd!(title, options[:description]) unless options[:force]
       task = { title: title }
       task[:project_id] = options[:project] if options.key?(:project)
       task[:description] = options[:description] if options.key?(:description)
@@ -424,12 +425,23 @@ module Todos
       parser.on("--field KEY=VALUE") { |value| (options[:fields] ||= []) << value } if allowed[:fields]
       parser.on("--notes TEXT") { |value| options[:notes] = value } if allowed[:notes]
       parser.on("--note TEXT") { |value| options[:note] = value } if allowed[:note]
+      parser.on("--force") { options[:force] = true } if allowed[:force]
       parser.parse!(args)
       options
     rescue OptionParser::ParseError => e
       raise Error.new(e.message, code: "INVALID_ARGUMENT")
     rescue ArgumentError => e
       raise Error.new(e.message, code: "INVALID_ARGUMENT")
+    end
+
+    def warn_gtd!(title, description)
+      reasons = []
+      reasons << "weak title verb" if title.match?(/\A(Review|Handle|Look into|Think about|Work on|Address)\b/i)
+      reasons << "test title" if title.match?(/\Atest\b/i)
+      reasons << "empty description" if description.to_s.gsub(/<[^>]+>/, "").strip.empty?
+      return if reasons.empty?
+
+      $stderr.puts "GTD warn (#{reasons.join(", ")}): title must be a next physical action, description must stand alone. Skill: write-human-todos. Pass --force to skip."
     end
 
     def positive_integer(value, name)

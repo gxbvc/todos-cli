@@ -16,7 +16,7 @@ todos-cli projects list --user <id|email>
 todos-cli projects create --user <id|email> -t TITLE [--area ID] [--status active|waiting|someday|completed] [--position N]
 todos-cli tasks list [--user <id|email>] [--project ID] [--status open|submitted|approved|canceled]
 todos-cli tasks get <id> [--user <id|email>]
-todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description HTML] [--due DATE] [--estimate N] [--source-url URL] [--schema JSON|@file]
+todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description HTML] [--due DATE] [--estimate N] [--source-url URL] [--schema JSON|@file] [--force]
 todos-cli tasks update <id> --user <id|email> [--title TITLE] [--project ID] [--description HTML] [--due DATE] [--estimate N] [--source-url URL] [--schema JSON|@file] [--field key=value] [--notes TEXT]
 todos-cli tasks destroy <id> --user <id|email>
 todos-cli tasks approve <id> --user <id|email>
@@ -29,6 +29,7 @@ todos-cli tasks respond <id> [--user <id|email>] --field key=value [--field key=
 ## Write next actions
 
 Every task must be a next physical action. Rules and examples: `write-human-todos` skill.
+`tasks create` warns on stderr (and still creates) for a weak title or empty description. `--force` skips the warn.
 
 ## Route rules
 

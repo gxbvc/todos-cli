@@ -113,13 +113,12 @@ that bound route.
 ### Create and update tasks
 
 ```bash
-todos-cli tasks create --user andy@example.com -t "Send W-9"
-todos-cli tasks create --user 12 -t "Complete profile" \
-  --project 7 \
-  --description "<p>Please complete every field.</p>" \
-  --due 2026-08-15 \
-  --schema '[{"key":"ein","label":"EIN","type":"text","placeholder":""}]'
-todos-cli tasks create --user 12 -t "Complete profile" --schema @schema.json
+todos-cli tasks create --user andy@example.com \
+  -t "Upload your signed W-9 to this card" \
+  --description "<p>IRS wants a W-9 before the first invoice. Open https://www.irs.gov/pub/irs-pdf/fw9.pdf, sign, upload here.</p>" \
+  --estimate 5 \
+  --schema '[{"key":"w9","label":"Signed W-9","type":"file"}]'
+todos-cli tasks create --user 12 -t "Upload your signed W-9 to this card" --schema @schema.json
 
 todos-cli tasks update 99 --user 12 --title "Send signed W-9" --due 2026-08-20
 todos-cli tasks update 99 --user 12 --field ein=12-3456789 --notes "Received"
