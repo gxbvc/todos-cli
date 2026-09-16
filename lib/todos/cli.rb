@@ -16,6 +16,7 @@ module Todos
         todos-cli me
         todos-cli users list
         todos-cli users show <id|email>
+        todos-cli users remind <id|email>
         todos-cli board [--user <id|email>]
         todos-cli areas list --user <id|email>
         todos-cli areas create --user <id|email> -t TITLE [--position N] [--active true|false]
@@ -30,6 +31,7 @@ module Todos
         todos-cli tasks approve <id> --user <id|email>
         todos-cli tasks reopen <id> [--user <id|email>] [--note TEXT]
         todos-cli tasks cancel <id> [--user <id|email>]
+        todos-cli tasks remind <id> --user <id|email>
         todos-cli tasks respond <id> [--user <id|email>] --field key=value [--field key=value] [--notes TEXT]
 
       Every task must be a next physical action.
@@ -93,8 +95,12 @@ module Todos
         reference = required_positional!("id or email")
         ensure_no_args!
         request(:get, "/users/#{resolve_user(reference)}.json")
+      when "remind"
+        reference = required_positional!("id or email")
+        ensure_no_args!
+        request(:post, "/users/#{resolve_user(reference)}/remind.json")
       else
-        fail_usage!("Usage: todos-cli users list|show")
+        fail_usage!("Usage: todos-cli users list|show|remind")
       end
     end
 
@@ -177,9 +183,10 @@ module Todos
       when "submit" then tasks_submit
       when "reopen" then tasks_reopen
       when "cancel" then tasks_cancel
+      when "remind" then tasks_remind
       when "respond" then tasks_respond
       else
-        fail_usage!("Usage: todos-cli tasks <list|get|create|update|destroy|approve|submit|reopen|cancel|respond>")
+        fail_usage!("Usage: todos-cli tasks <list|get|create|update|destroy|approve|submit|reopen|cancel|remind|respond>")
       end
     end
 
@@ -306,6 +313,15 @@ module Todos
                "/tasks/#{id}/cancel.json"
              end
       request(:patch, path)
+    end
+
+    # Admin-only, like approve/destroy: re-sends TaskMailer#reminder for one
+    # to-do without touching its status or assignment state.
+    def tasks_remind
+      id = required_positional!("task id")
+      options = parse_options(@args, user: true)
+      ensure_no_args!
+      request(:post, "/users/#{require_user!(options[:user])}/tasks/#{id}/remind.json")
     end
 
     def tasks_respond

@@ -83,6 +83,18 @@ class TodosCliTest < Minitest::Test
         body: nil
       },
       {
+        args: %w[tasks remind 9 --user 7],
+        method: "POST",
+        target: "/users/7/tasks/9/remind.json",
+        body: nil
+      },
+      {
+        args: %w[users remind 7],
+        method: "POST",
+        target: "/users/7/remind.json",
+        body: nil
+      },
+      {
         args: %w[tasks respond 9 --user 7 --field ein=12-345 --field name=Jane --notes Done],
         method: "PATCH",
         target: "/users/7/tasks/9.json",
@@ -223,6 +235,48 @@ class TodosCliTest < Minitest::Test
     assert_equal true, output["ok"]
     assert_equal "/users.json", first[:target]
     assert_equal "/users/7/tasks/9.json", second[:target]
+  end
+
+  def test_tasks_remind_resolves_an_email_user
+    users = { users: [{ id: 7, email: "andy@example.com", name: "Andy" }] }
+    server = StubServer.new({ body: JSON.generate(users) }, {})
+
+    output, = run_cli("tasks", "remind", "9", "--user", "andy@example.com", server: server)
+    server.requests.pop
+    second = server.requests.pop
+
+    assert_equal true, output["ok"]
+    assert_equal "POST", second[:method]
+    assert_equal "/users/7/tasks/9/remind.json", second[:target]
+  end
+
+  def test_tasks_remind_requires_user
+    output, _stderr, status = run_cli("tasks", "remind", "9", server: StubServer.new)
+
+    refute status.success?
+    assert_equal false, output["ok"]
+    assert_equal "USER_REQUIRED", output["code"]
+  end
+
+  def test_users_remind_resolves_an_email_user
+    users = { users: [{ id: 7, email: "andy@example.com", name: "Andy" }] }
+    server = StubServer.new({ body: JSON.generate(users) }, {})
+
+    output, = run_cli("users", "remind", "andy@example.com", server: server)
+    server.requests.pop
+    second = server.requests.pop
+
+    assert_equal true, output["ok"]
+    assert_equal "POST", second[:method]
+    assert_equal "/users/7/remind.json", second[:target]
+  end
+
+  def test_users_remind_requires_a_positional_reference
+    output, _stderr, status = run_cli("users", "remind", server: StubServer.new)
+
+    refute status.success?
+    assert_equal false, output["ok"]
+    assert_equal "INVALID_ARGUMENT", output["code"]
   end
 
   def test_http_errors_always_use_json_envelope

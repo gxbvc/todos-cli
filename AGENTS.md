@@ -9,6 +9,7 @@ Output is always one JSON line: `{"ok":true,"data":...}` or `{"ok":false,"error"
 todos-cli me
 todos-cli users list
 todos-cli users show <id|email>
+todos-cli users remind <id|email>
 todos-cli board [--user <id|email>]
 todos-cli areas list --user <id|email>
 todos-cli areas create --user <id|email> -t TITLE [--position N] [--active true|false]
@@ -23,8 +24,11 @@ todos-cli tasks approve <id> --user <id|email>
 todos-cli tasks submit <id> [--user <id|email>] [--field key=value]
 todos-cli tasks reopen <id> [--user <id|email>] [--note TEXT]
 todos-cli tasks cancel <id> [--user <id|email>]
+todos-cli tasks remind <id> --user <id|email>
 todos-cli tasks respond <id> [--user <id|email>] --field key=value [--field key=value] [--notes TEXT]
 ```
+
+`tasks remind` re-sends mail for one open to-do; `users remind` sends one email covering everything open on that user's board. Both are a re-send, not a new assignment — they never touch a to-do's assigned/pending state, so they cannot suppress a later real assignment email. Admin key required for both.
 
 ## Write next actions
 
