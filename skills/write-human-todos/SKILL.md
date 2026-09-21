@@ -9,79 +9,78 @@ description: >
 
 # Write human todos (GTD)
 
-Create work the human can reopen days later, understand in 10 seconds, and
-finish without chat. Write into their trusted system, not yours.
+A good todo can be reopened days later, understood in 10 seconds, and finished
+without the chat. Write it into their trusted system, not yours.
 
-## Hierarchy: Area → Project → Todo
+## Area, Project, Todo
 
-| Level | Definition | End condition |
+| Level | What it is | When it ends |
 |---|---|---|
-| **Area** | Ongoing responsibility, often a client or durable domain | Never done; active or inactive |
-| **Project** | End-state requiring multiple actions | A stated outcome is true |
-| **Todo** | One physical, visible next action or decision only a human can do | One sitting; unambiguous |
+| **Area** | Ongoing responsibility, often a client or durable domain | Never. Active or inactive. |
+| **Project** | An end state that needs several actions | When the stated outcome is true |
+| **Todo** | One physical, visible next action or decision only a human can do | One sitting. Done is unambiguous. |
 
-- Complete all agent-capable work. Todos are **human-gated only**: money, 2FA,
-  legal decisions, personal accounts, body, inbox, signature.
-- Multiple human actions require a Project and atomic todos. A Project needs an
-  open next action or an incubating/waiting state.
-- Areas group Projects, not actions. Use domain names (`Andy Sibley`, `Personal
-  ops`), without action verbs or due dates.
-- A standalone todo is fine when one action completes the outcome.
+- Do the agent's work first. Todos are only for what a human must do: money,
+  2FA, legal decisions, personal accounts, body, inbox, signature.
+- Several human actions need a Project with one atomic todo each, and always
+  an open next action or an incubating or waiting state.
+- Areas hold Projects, not actions. Name them by domain (`Andy Sibley`,
+  `Personal ops`), with no action verb and no due date.
+- A standalone todo is fine when one action finishes the outcome.
 
-## Pre-digest first
+## Decide what you can first
 
-The reader is often tired. Assume they will not open anything else. If you can
-make the call yourself, make it, and put the reasoning on the ticket instead.
-Never file `Comment on ticket N`, `Decide A vs B`, or a decision memo unless the
-decision is irreversible, spends money, or is a taste call only they can make.
+The reader is tired and will not open anything else. If you can make the call,
+make it, and put the reasoning on the ticket. Never file
+`Comment on ticket N`, `Decide A vs B`, or a decision memo unless the decision
+is irreversible, spends money, or is a taste call only they can make.
 
-Every todo is one of three shapes:
+Every todo has one of three shapes:
 
 1. **A physical action.** `Text Tom that the human run is done`.
 2. **A look-and-riff.** `Look at Since last login and type 3 messy bullets`.
-3. **A one-tap pick**, only when you truly cannot choose. One radio field, 2–3
-   options, recommended first, each option a short example.
+3. **A one-tap pick**, only when you truly cannot choose. One radio field, 2 or 3
+   options, recommended first, each with a short example.
 
 ## Todo rules
 
-A todo is an immediate **physical, visible** activity: a watcher could see the
-keyboard, phone, browser, or body action. Replace `think about`, `look into`, or
-bare `decide` with `Reply yes or no to …`. Require the next doable step.
+A todo is a physical, visible act. A watcher could see the keyboard, phone,
+browser, or body move. Replace `think about`, `look into`, or a bare
+`decide` with `Reply yes or no to …`. Always give the next doable step.
 
 ### Title
 
-- **One outcome.** Split independent decisions/deliverables. Use `and` only for
-  one sitting and one done-state.
-- Use a strong verb + object: `Confirm`, `Send`, `Claim`, `Paste`, `Upload`,
-  `Pay`, `Grant`, `Reply`. Avoid `Handle`, `Work on`, `Address`, or bare `Review`.
-- State the outcome, not a gesture; make done obvious.
-- Never bundle “N questions”; create one todo per decision.
-- Aim for 6–14 specific words. Cut `quick`, `just`, `for me`, `please`, `simple`.
+- One outcome. Split independent decisions and deliverables, and never bundle
+  "N questions". Use `and` only for one sitting with one done state.
+- Strong verb plus object: `Confirm`, `Send`, `Claim`, `Paste`, `Upload`,
+  `Pay`, `Grant`, `Reply`. Avoid `Handle`, `Work on`, `Address`, and a bare
+  `Review`.
+- Name the outcome, not the gesture, so done is obvious.
+- 6 to 14 specific words. Cut `quick`, `just`, `for me`, `please`, `simple`.
 
 ### Description
 
-- **Three short sentences, plus steps.** Prose past that is your context, not
-  their next action.
-- Make it **self-contained**: include every fact needed; never depend on chat,
-  discovery history, or a private plan/PR.
-- Every link must open for them. **Never a `file://` link** (it does not open
-  from the web app) and never a repo path like `./plans/12`. Say the Finder
-  path in words, or `open` the file yourself before assigning the todo.
-- Include as needed: one-line why, facts, numbered steps with exact URLs/UI
-  labels, and **Done looks like:** the required return.
-- **No AI slop:** omit `Here's what we found`, `As discussed`, `To recap`,
-  `Hope this helps`, `Assumption:`, `It appears that`, `You may want to`,
-  hedging, repeated titles, and investigation diaries. Prefer steps to prose.
-- Never dump the source email or ticket body into the description.
-- State a blocker as cause then action. No `Unfortunately`, no `There seems to
+- Three short sentences, then steps. Anything more is your context, not their
+  next action.
+- Every link must open for them. Never a `file://` link (the web app cannot
+  open it) or a repo path like `./plans/12`. Say the Finder path in words, or
+  `open` the file yourself first.
+- Include as needed: a one-line why, facts, numbered steps with exact URLs and
+  UI labels, and **Done looks like:** with the required return.
+- No AI slop: `Here's what we found`, `As discussed`, `To recap`, `Hope this
+  helps`, `Assumption:`, `It appears that`, `You may want to`, hedging, repeated
+  titles, or investigation diaries. Prefer steps to prose.
+- Never paste in the source email or ticket body.
+- State a blocker as cause, then action. No `Unfortunately`. No `There seems to
   be a problem`.
-- Never put secrets in prose; request them through a password field.
+- Never put a secret in prose. Ask for it with a password field.
 
 ### Self-contained or not filed
 
-A todo is read cold, weeks later, by someone who has forgotten the project. It
-must carry everything needed to decide and act. If the reader has to look
-something up to start, the todo is not finished; you are.
+The reader opens this cold, weeks later, with the project forgotten. It must
+carry every fact they need to decide and act, and never depend on the chat,
+your discovery history, or a private plan or PR. If they have to look something
+up to start, the todo is not finished. You are.
 
 **Never name a thing without carrying the thing.** These all fail:
 
@@ -89,112 +88,110 @@ something up to start, the todo is not finished; you are.
 |---|---|
 | `one line each for A3, B2, D5, D9` | Bare labels. The reader cannot judge what they cannot see. |
 | `In Notes, type …` | Which notes? No link, no app, no file. |
-| `Leave the Taiwan wording blank` | An unexplained proper noun doing load-bearing work. |
+| `Leave the Taiwan wording blank` | An unexplained proper noun carries the whole meaning. |
 | `Do this in the Wave 1 workbook, not the old file` | Two unnamed files, one defined only as "not the other one". |
 | `Reply on the existing thread` | Which thread, in which mailbox, from when? |
 
-Fix by **inlining or linking, and preferably both**:
+Fix it by inlining or linking, and preferably both:
 
-- **Inline the decision material.** If they must grade seven exhibits, put the
-  seven titles in the description, one per line, each with the one fact that
-  decides it. A decision todo carries its own evidence.
-- **Link with a URL that opens for them.** `https://` only. A ticket number,
-  a plan path, a filename, or a `file://` link is not a link.
-- **Spell out every proper noun on first use.** `Taiwan` becomes
+- **Inline the decision material.** Seven exhibits to grade means seven titles
+  in the description, one per line, each with the one fact that decides it.
+- **Link with an `https://` URL.** A ticket number, a plan path, a filename, or
+  a `file://` link is not a link.
+- **Spell out every proper noun the first time.** `Taiwan` becomes
   `the Taiwan question (does China blockade or strike Taiwan before 30 Jun 2027)`.
 - **If you cannot inline it, you cannot file it.** Go find the thing first, or
   file the todo that produces it instead.
 
 **Do not encode someone else's state.** `Leave it blank for Owen` and
-`Send Owen the HTML` both rot silently the moment Owen moves. Write what the
-reader does with what is true now, and re-check any todo that waits on a third
-party before you hand it back to them.
+`Send Owen the HTML` both go wrong the moment Owen moves. Write what the reader
+does with what is true now, and re-check any todo that waits on a third party
+before you hand it back.
 
-**Do not depend on a thing that does not exist yet.** `Send the report` when no
-report exists is two todos, and only the first one is fileable today.
+**Do not depend on a thing that does not exist yet.** `Send the report` with no
+report is two todos, and only the first can be filed today.
 
-The test: hand the todo to a competent stranger with no access to your chat,
-your files, or your memory. If they cannot start within 10 seconds, rewrite it.
+The test: give the todo to a competent stranger with no access to your chat,
+files, or memory. If they cannot start within 10 seconds, rewrite it.
 
 ### Estimate and source (optional)
 
 Both are `todos-cli` flags, not description text.
 
-- `--estimate N` sets `estimated_minutes` and renders as a `~N min` pill on the
-  card. Give it whenever you can name a number: `--estimate 2`, `--estimate 15`.
-  A todo you cannot estimate is not scoped yet, so split it. Never write
-  `quick`, `a bit`, or `shouldn't take long` in the description instead.
-- `--source-url URL` sets `source_url`, the ticket that created this todo or the
-  one it depends on. Hidden from the UI, readable through the API. Use it so
-  the trail survives without spending description space on ticket archaeology.
-  Must be `http://` or `https://`.
+- `--estimate N` sets `estimated_minutes` and shows a `~N min` pill on the card.
+  Give it whenever you can name a number: `--estimate 2`, `--estimate 15`. A
+  todo you cannot estimate is not scoped yet, so split it. Never write `quick`,
+  `a bit`, or `shouldn't take long` in the description instead.
+- `--source-url URL` sets `source_url`: the ticket that created this todo or the
+  one it depends on. Hidden in the UI, readable through the API. It keeps the
+  trail out of the description. Must be `http://` or `https://`.
 
 ### Response fields
 
-- One human-facing instruction field per return value: text, textarea, URL,
-  password, file, radio, or checkboxes. Use radio for a single pick from two or
-  more short options, with the recommended option first. Use checkboxes when
-  more than one option can apply. Omit fields when marking done is enough.
+One instruction field per value you need back: text, textarea, URL, password,
+file, radio, or checkboxes. Radio for one pick from two or more short options,
+recommended first. Checkboxes when more than one can apply. No fields when
+marking done is enough.
 
 ## Projects
 
-Use a short outcome title (`Website launch`, `Anthropic billing`). State
-completed reality, not a task list; todos hold next actions.
+A short outcome title (`Website launch`, `Anthropic billing`). Describe the
+finished state, not a task list. Todos hold the next actions.
 
-## Split test
+## When to split
 
 Rewrite or split when:
 
 - there are two logins, decisions, or deliverables;
 - half can finish while half is blocked;
-- “mark done” could be ambiguous; or
+- "mark done" could mean more than one thing; or
 - the agent can do any part instead.
 
-## Pre-create check
+## Before you create it
 
 Before `tasks create`, delete or fix:
 
 1. A title whose verb is `Review`, `Handle`, `Look into`, `Think about`, or a
    bare `Decide` with no yes/no.
-2. Any sentence describing what you did or found.
-3. Anything they must open to resolve: a ticket number, a plan path, a
+2. Any sentence about what you did or found.
+3. Anything they must open to understand it: a ticket number, a plan path, a
    `file://` link, `as discussed`.
 4. Any bare identifier (`A3`, `D12`, `the Wave 1 workbook`, `the existing
-   thread`) whose content is not inlined or linked with an `https://` URL.
+   thread`) not inlined or linked with an `https://` URL.
 5. Any proper noun a stranger would have to ask about.
 6. Any instruction that depends on what a third party has or has not done yet.
 7. Any decision you could have made yourself.
 8. Any hedge: `might`, `probably`, `you may want to`.
-9. Do not pass `--force` to silence a weak-title warning. Fix the title.
+9. `--force` used to silence a weak-title warning. Fix the title instead.
 
-Then verify: reading only the title and the first sentence, do they know what
-to physically do, and where? If no, rewrite it.
+Then check: from the title and first sentence alone, do they know what to
+physically do, and where? If not, rewrite it.
 
 ## Rewrite examples
 
 **Bad:** `Answer two quick yes/no questions for me`  
 **Good:** two todos: `Decide whether to enable S3 versioning on prod-assets
 (yes/no)` and `Decide whether to delete unused dev-scratch bucket (yes/no)`.
-Each gives consequences, cost, recommendation, and a yes/no field.
+Each gives the consequences, cost, recommendation, and a yes/no field.
 
 **Bad:** `Run one AWS command and paste what it says`  
 **Good:** `Paste aws organizations describe-account output to confirm management
-account ID`. Include the command, known profile/region, relevant line, and why.
+account ID`, with the command, the profile and region, the line that matters,
+and why.
 
 **Bad:** `Handle Anthropic billing`  
-**Good:** Project outcome: “Anthropic account funded with auto-reload on”; todo:
-`Put money on the Anthropic account and turn on auto-reload`, with URL, amount
-guidance, and toggle location.
+**Good:** Project outcome "Anthropic account funded with auto-reload on". Todo:
+`Put money on the Anthropic account and turn on auto-reload`, with the URL, how
+much to add, and where the toggle is.
 
-**Bad:** `Type keep, rebuild, or cut for each Wave 1 exhibit` / body: `In Notes,
+**Bad:** `Type keep, rebuild, or cut for each Wave 1 exhibit`, body `In Notes,
 one line each for A3, B2, D5, D9, D12, D14, D15.`  
-**Good:** one todo per exhibit. Each todo carries that exhibit's title, what it
-currently shows, and why it is in question. Put the material on the screen so
-the reader does not have to remember it.
+**Good:** one todo per exhibit, each with that exhibit's title, what it shows
+now, and why it is in question.
 
 **Bad:** `Review items 343, 159, and 1981`  
-**Good:** one todo per item. Each todo includes that item's title, the one fact
-that decides it, and a yes/no or radio. If they must open the record, link the
+**Good:** one todo per item, each with that item's title, the one fact that
+decides it, and a yes/no or radio field. If they must open the record, link the
 exact `https://` URL where they act, not the id.
 
 **Good bar:**
@@ -205,10 +202,10 @@ exact `https://` URL where they act, not the id.
 
 ## Agent workflow
 
-When asked to do complex work and add todos for human dependencies:
+When asked to do complex work and add todos for the human parts:
 
-1. Finish all agent-capable work.
-2. Group the remainder: Area for domain/client → Project for multi-step outcome
-   → atomic todos.
-3. Emit fewer, sharper todos; vague extras steal attention.
-4. Require no chat context.
+1. Finish everything an agent can do.
+2. Group the rest: an Area for the domain or client, a Project for a multi-step
+   outcome, atomic todos under it.
+3. File fewer, sharper todos. Vague extras steal attention.
+4. None of them may need the chat.
