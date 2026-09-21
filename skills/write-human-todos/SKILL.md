@@ -69,7 +69,7 @@ bare `decide` with `Reply yes or no to …`. Require the next doable step.
   path in words, or `open` the file yourself before assigning the todo.
 - Include as needed: one-line why, facts, numbered steps with exact URLs/UI
   labels, and **Done looks like:** the required return.
-- **No AI sloop:** omit `Here's what we found`, `As discussed`, `To recap`,
+- **No AI slop:** omit `Here's what we found`, `As discussed`, `To recap`,
   `Hope this helps`, `Assumption:`, `It appears that`, `You may want to`,
   hedging, repeated titles, and investigation diaries. Prefer steps to prose.
 - Never dump the source email or ticket body into the description.
@@ -165,6 +165,7 @@ Before `tasks create`, delete or fix:
 6. Any instruction that depends on what a third party has or has not done yet.
 7. Any decision you could have made yourself.
 8. Any hedge: `might`, `probably`, `you may want to`.
+9. Do not pass `--force` to silence a weak-title warning. Fix the title.
 
 Then verify: reading only the title and the first sentence, do they know what
 to physically do, and where? If no, rewrite it.
@@ -187,19 +188,19 @@ guidance, and toggle location.
 
 **Bad:** `Type keep, rebuild, or cut for each Wave 1 exhibit` / body: `In Notes,
 one line each for A3, B2, D5, D9, D12, D14, D15.`  
-**Good:** one todo per exhibit, or one todo with a radio per exhibit, each
-carrying the exhibit's title, what it currently shows, and why it is in
-question. The reader grades what is on the screen, not what they remember.
+**Good:** one todo per exhibit. Each todo carries that exhibit's title, what it
+currently shows, and why it is in question. Put the material on the screen so
+the reader does not have to remember it.
 
 **Bad:** `Review items 343, 159, and 1981`  
-**Good:** one todo (or three) that inlines each item's title, the one fact that
-decides it, and a yes/no or radio. If they must open the record, link the
+**Good:** one todo per item. Each todo includes that item's title, the one fact
+that decides it, and a yes/no or radio. If they must open the record, link the
 exact `https://` URL where they act, not the id.
 
 **Good bar:**
 
 `Claim your Google Business Profile and start verification today`  
-`Fix your Psychology Today listing and turn off call routing`  
+`Turn off call routing on the Psychology Today listing`  
 `Decide whether to cancel Squarespace once the new site is live and tell me yes or no`
 
 ## Agent workflow
