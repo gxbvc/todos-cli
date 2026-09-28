@@ -187,6 +187,25 @@ class TodosCliTest < Minitest::Test
         method: "POST",
         target: "/users/7/projects.json",
         body: { "project" => { "title" => "Default-area-project" } }
+      },
+      {
+        args: %w[projects create -t TAP-intake --area 4],
+        method: "POST",
+        target: "/projects.json",
+        body: { "project" => { "title" => "TAP-intake", "area_id" => "4" } }
+      },
+      {
+        args: %w[projects create -t Side-work],
+        method: "POST",
+        target: "/projects.json",
+        body: { "project" => { "title" => "Side-work" } }
+      },
+      {
+        args: %w[projects invite 12 --email sue@tap.test],
+        method: "POST",
+        target: "/projects/12/invites.json",
+        body: { "email" => "sue@tap.test" },
+        response: { body: JSON.generate(status: "invited", invite: { id: 3, email: "sue@tap.test" }) }
       }
     ]
 
@@ -209,6 +228,16 @@ class TodosCliTest < Minitest::Test
         assert_equal "application/json", request[:headers]["content-type"]
       end
     end
+  end
+
+  def test_projects_create_without_user_says_it_is_my_own_project
+    output, stderr, status = run_cli(*%w[projects create -t Side-work], server: StubServer.new({}))
+    assert status.success?
+    assert_equal true, output["ok"]
+    assert_match(/^No --user: making the project in your own board\.$/, stderr)
+
+    _output, stderr, = run_cli(*%w[projects create --user 7 -t Side-work], server: StubServer.new({}))
+    refute_match(/No --user/, stderr)
   end
 
   def test_estimate_and_source_url_must_be_valid
@@ -425,6 +454,32 @@ class TodosCliTest < Minitest::Test
       assert_kind_of String, output["error"]
       assert_equal %w[code error ok], output.keys.sort
     end
+  end
+
+  def test_projects_create_without_user_refuses_admin_only_flags
+    server = StubServer.new
+    output, _stderr, status = run_cli("projects", "create", "-t", "TAP", "--status", "active", server: server)
+
+    refute status.success?
+    assert_equal "INVALID_ARGUMENT", output["code"]
+    assert_empty server.requests
+  end
+
+  def test_projects_invite_needs_an_email_and_reports_the_servers_reason
+    output, _stderr, status = run_cli("projects", "invite", "12", server: StubServer.new)
+    refute status.success?
+    assert_equal "INVALID_ARGUMENT", output["code"]
+
+    server = StubServer.new(status: 403, body: JSON.generate(status: "refused", reason: "Only the project owner can invite people."))
+    output, stderr, status = run_cli("projects", "invite", "12", "--email", "x@tap.test", server: server)
+    refute status.success?
+    assert_equal "HTTP_403", output["code"]
+    assert_equal "Only the project owner can invite people.", output["error"]
+    assert_includes stderr, "Only the project owner can invite people."
+
+    server = StubServer.new(body: JSON.generate(status: "already_member"))
+    output, = run_cli("projects", "invite", "12", "--email", "sam@tap.test", server: server)
+    assert_equal({ "ok" => true, "data" => { "status" => "already_member" } }, output)
   end
 
   def test_204_is_success_with_null_data

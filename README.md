@@ -86,6 +86,8 @@ todos-cli areas create --user 12 -t "BrightView" --position 1 --active true
 todos-cli projects list --user andy@example.com
 todos-cli projects create --user andy@example.com -t "Onboarding"
 todos-cli projects create --user 12 -t "Tax filings" --area 3 --status active --position 0
+todos-cli projects create -t "TAP intake" --area 4
+todos-cli projects invite 12 --email sue@example.com
 ```
 
 Without `--user`, `board` reads the authenticated user's own board. `areas list`
@@ -93,9 +95,20 @@ and `projects list` require `--user` and flatten from that user's board
 (`GET /users/:id.json`). Areas include `id`, `title`, `position`, `active`, and
 `project_count`. Projects include `area_id` and `area_title`.
 
-Area and project create are admin nested routes and require `--user`. Omitting
-`--area` on project create lets the server assign the user's default area.
+Area create is an admin nested route and requires `--user`. Project create with
+`--user` is the admin route on that person's board. Without `--user` it makes a
+project you own (`POST /projects.json`) in one of your own areas (`--area`;
+`GET /projects.json` rows carry your `area_id`); `--status` and `--position`
+need `--user`. Omitting `--area` lets the server use the first area. It prints
+"No --user: making the project in your own board." on stderr, so a forgotten
+`--user` is easy to see.
 Valid project statuses are `active`, `waiting`, `someday`, and `completed`.
+
+`projects invite <id> --email EMAIL` emails a one-time link to join a project
+you own (`POST /projects/:id/invites.json`). `data.status` is `invited` (sent,
+or a pending invite sent again) or `already_member` (nothing sent). A refusal
+(not the owner, a bad email, the 20-an-hour limit) exits 1 with the server's
+reason. The reply never says whether the email has an account.
 
 ### Read tasks
 

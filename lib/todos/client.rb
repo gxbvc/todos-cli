@@ -116,6 +116,10 @@ module Todos
       error = parsed["error"]
       return error.to_s unless error.nil? || error.to_s.empty?
 
+      # A refused invite: { status: "refused", reason }.
+      reason = parsed["reason"]
+      return reason.to_s unless reason.nil? || reason.to_s.empty?
+
       errors = parsed["errors"]
       return errors.join("; ") if errors.is_a?(Array)
       return errors.values.flatten.join("; ") if errors.is_a?(Hash)

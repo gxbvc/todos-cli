@@ -21,7 +21,9 @@ module Todos
         todos-cli areas list --user <id|email>
         todos-cli areas create --user <id|email> -t TITLE [--position N] [--active true|false]
         todos-cli projects list --user <id|email>
+        todos-cli projects create -t TITLE [--area ID]
         todos-cli projects create --user <id|email> -t TITLE [--area ID] [--status STATUS] [--position N]
+        todos-cli projects invite <id> --email EMAIL
         todos-cli tasks list [--user <id|email>] [--project ID] [--status STATUS]
         todos-cli tasks get|show <id> [--user <id|email>]
         todos-cli tasks check -t TITLE [--description HTML] [--schema JSON|@file]
@@ -176,8 +178,9 @@ module Todos
       case subcommand
       when "list" then projects_list
       when "create" then projects_create
+      when "invite" then projects_invite
       else
-        fail_usage!("Usage: todos-cli projects <list|create>")
+        fail_usage!("Usage: todos-cli projects <list|create|invite>")
       end
     end
 
@@ -188,11 +191,27 @@ module Todos
       flatten_projects(board_for(user_id))
     end
 
+    # Two routes. With --user: the admin's create on that person's board.
+    # Without it: my own project (POST /projects.json), in one of my areas
+    # (--area), and I own it.
     def projects_create
       options = parse_options(@args, user: true, title: true, area: true, status: true, position: true)
       ensure_no_args!
-      user_id = require_user!(options[:user])
       title = required_option!(options[:title], "--title/-t")
+      unless options[:user]
+        if options.key?(:status) || options.key?(:position)
+          raise Error.new("--status and --position need --user (admin create)", code: "INVALID_ARGUMENT")
+        end
+
+        # Without --user it is my own project, not a client's: say so, in
+        # case --user was forgotten.
+        @err.puts("No --user: making the project in your own board.")
+        project = { title: title }
+        project[:area_id] = options[:area] if options.key?(:area)
+        return request(:post, "/projects.json", body: { project: project })
+      end
+
+      user_id = require_user!(options[:user])
       if options[:status] && !PROJECT_STATUSES.include?(options[:status])
         raise Error.new("Status must be one of: #{PROJECT_STATUSES.join(", ")}", code: "INVALID_ARGUMENT")
       end
@@ -202,6 +221,17 @@ module Todos
       project[:status] = options[:status] if options.key?(:status)
       project[:position] = options[:position] if options.key?(:position)
       request(:post, "/users/#{user_id}/projects.json", body: { project: project })
+    end
+
+    # Email someone a link to join a project I own. data.status is invited or
+    # already_member; a refusal (not the owner, bad email, rate limit) exits 1
+    # with the server's reason.
+    def projects_invite
+      id = required_positional!("project id")
+      options = parse_options(@args, email: true)
+      ensure_no_args!
+      email = required_option!(options[:email], "--email")
+      request(:post, "/projects/#{id}/invites.json", body: { email: email })
     end
 
     def tasks
@@ -520,6 +550,7 @@ module Todos
       end
       parser.on("--project ID") { |value| options[:project] = value } if allowed[:project]
       parser.on("--assignee EMAIL") { |value| options[:assignee] = value } if allowed[:assignee]
+      parser.on("--email EMAIL") { |value| options[:email] = value } if allowed[:email]
       parser.on("--area ID") { |value| options[:area] = value } if allowed[:area]
       parser.on("--description HTML") { |value| options[:description] = value } if allowed[:description]
       parser.on("--due DATE") { |value| options[:due] = value } if allowed[:due]
