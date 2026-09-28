@@ -99,7 +99,7 @@ module Todos
 
       message = error_message(parsed)
       message ||= "HTTP #{status} returned a non-JSON response"
-      raise Error.new(message, code: "HTTP_#{status}")
+      raise Error.new(message, code: "HTTP_#{status}", details: parsed)
     end
 
     def parse_json(body)

@@ -147,6 +147,28 @@ Rewrite or split when:
 - "mark done" could mean more than one thing; or
 - the agent can do any part instead.
 
+## How todo.gxb.vc scores it
+
+The server asks Jev 7 yes/no questions about the title, the description, and
+each field's label, type, and options. It never reads answers, notes, or
+secrets. Each check passes at its own floor. The score is the weakest check:
+70 or more means all 7 pass. While the gate is on, a to-do for someone else
+that fails a blocking check is refused with each failed check and its hint.
+A to-do for yourself is scored but never refused.
+
+| Check | Blocks | Passes when |
+|---|---|---|
+| `physical_action` | yes | One act a watcher could see: send, pay, upload, call, sign, type a short answer, pick an option. |
+| `done_is_obvious` | yes | The doer knows for sure when they are finished. |
+| `strong_verb` | no | The title starts with a strong verb: Send, Pay, Reply, Confirm, Upload. |
+| `prework_done` | yes | You did the prep. For a send, the draft is in the description. For a choice, the options are listed. |
+| `self_contained` | yes | The assignee can start in 10 seconds from the card and their own accounts. |
+| `one_outcome` | yes | One sitting, one result. |
+| `human_gated` | no | Only a person can do it. |
+
+Check a draft before you file it: `todos-cli tasks check` or the MCP tool
+`todos_check_quality`. Fix each failed check with its hint.
+
 ## Before you create it
 
 Before `tasks create`, delete or fix:
@@ -162,7 +184,7 @@ Before `tasks create`, delete or fix:
 6. Any instruction that depends on what a third party has or has not done yet.
 7. Any decision you could have made yourself.
 8. Any hedge: `might`, `probably`, `you may want to`.
-9. `--force` used to silence a weak-title warning. Fix the title instead.
+9. Any check that failed in `tasks check` or `todos_check_quality`.
 
 Then check: from the title and first sentence alone, do they know what to
 physically do, and where? If not, rewrite it.

@@ -19,6 +19,60 @@ class TodosCliTest < Minitest::Test
         }
       },
       {
+        args: %w[tasks create -t Send-W9 --project 3 --assignee sam@example.com --description <p>Hi</p> --due 2026-08-01 --star --schema] + [JSON.generate(schema)],
+        method: "POST",
+        target: "/tasks.json",
+        body: {
+          "task" => {
+            "title" => "Send-W9", "project_id" => "3", "description" => "<p>Hi</p>",
+            "due_date" => "2026-08-01", "fields_schema" => schema, "starred" => true,
+            "assignee_email" => "sam@example.com"
+          }
+        }
+      },
+      {
+        args: %w[tasks create --user 7 -t Send-W9 --star],
+        method: "POST",
+        target: "/users/7/tasks.json",
+        body: { "task" => { "title" => "Send-W9", "starred" => true } }
+      },
+      {
+        args: %w[tasks check -t Send-W9 --description <p>Hi</p> --schema] + [JSON.generate(schema)],
+        method: "POST",
+        target: "/quality_checks.json",
+        body: { "title" => "Send-W9", "description" => "<p>Hi</p>", "fields_schema" => schema }
+      },
+      {
+        args: %w[tasks approve 9],
+        method: "PATCH",
+        target: "/tasks/9/approve.json",
+        body: nil
+      },
+      {
+        args: %w[tasks send-back 9 --note Add-the-invoice-number],
+        method: "PATCH",
+        target: "/tasks/9/send_back.json",
+        body: { "note" => "Add-the-invoice-number" }
+      },
+      {
+        args: %w[tasks star 9],
+        method: "PATCH",
+        target: "/tasks/9/star.json",
+        body: { "starred" => true }
+      },
+      {
+        args: %w[tasks star 9 --off],
+        method: "PATCH",
+        target: "/tasks/9/star.json",
+        body: { "starred" => false }
+      },
+      {
+        args: %w[tasks star 9 --user 7 --off],
+        method: "PATCH",
+        target: "/users/7/tasks/9/star.json",
+        body: { "starred" => false }
+      },
+      {
         args: %w[tasks update 9 --user 7 --title Revised --project 4 --description <p>New</p> --due 2026-09-01 --estimate 30 --source-url https://tickets.gxb.vc/456 --schema] +
           [JSON.generate(schema)] + %w[--field ein=12-345 --notes Ready],
         method: "PATCH",
@@ -185,29 +239,105 @@ class TodosCliTest < Minitest::Test
     end
   end
 
-  def test_create_warns_on_empty_description_and_still_creates
-    server = StubServer.new({})
-    output, stderr, status = run_cli(
-      "tasks", "create", "--user", "7", "-t", "Send W-9",
-      server: server
-    )
-
-    assert status.success?
-    assert_equal true, output["ok"]
-    assert_match(/GTD warn \(empty description\)/, stderr)
-    assert_match(/--force/, stderr)
+  # The server's quality breakdown (todo TaskQuality) as JSON.
+  def quality(passed:, failing: [])
+    checks = [
+      ["physical_action", "One physical next step", true, "Name one act someone could watch you do."],
+      ["strong_verb", "Starts with a strong verb", false, "Start with Send, Pay, Reply, Confirm, or Upload."],
+      ["prework_done", "Prep work is done", true, "Do the prep first. For a send, put the draft in the description."]
+    ].map do |id, label, blocking, hint|
+      failed = failing.include?(id)
+      { id: id, label: label, p_yes: failed ? 0.2 : 0.9, score: failed ? 40 : 88, passed: !failed, blocking: blocking, hint: hint }
+    end
+    { score: failing.any? ? 40 : 88, version: "v2", gated: false, passed: passed, weakest: failing.first || "physical_action", checks: checks }
   end
 
-  def test_create_force_skips_gtd_warn
-    server = StubServer.new({})
-    output, stderr, status = run_cli(
-      "tasks", "create", "--user", "7", "-t", "test todo", "--force",
-      server: server
-    )
+  def test_create_prints_the_quality_checks_with_hints_for_fails
+    body = { id: 99, title: "Send W-9", status: "open", quality: quality(passed: false, failing: %w[prework_done strong_verb]) }
+    server = StubServer.new(status: 201, body: JSON.generate(body))
+    output, stderr, status = run_cli("tasks", "create", "--user", "7", "-t", "Send W-9", server: server)
 
     assert status.success?
     assert_equal true, output["ok"]
+    assert_equal 40, output.dig("data", "quality", "score")
+    assert_match(/^Quality 40 \(weakest: prework_done\), failed$/, stderr)
+    assert_match(/^  pass  physical_action: 88$/, stderr)
+    assert_match(/^  FAIL  prework_done: 40\. Do the prep first\. For a send, put the draft in the description\.$/, stderr)
+    assert_match(/^  FAIL  strong_verb \(does not block\): 40\. Start with Send/, stderr)
     refute_match(/GTD warn/, stderr)
+  end
+
+  def test_a_quality_refusal_prints_the_failed_checks_and_exits_nonzero
+    body = { errors: ["Fix these checks before you assign it: Prep work is done"], quality: quality(passed: false, failing: %w[prework_done]) }
+    server = StubServer.new(status: 422, body: JSON.generate(body))
+    output, stderr, status = run_cli(
+      "tasks", "create", "-t", "Send W-9", "--project", "3", "--assignee", "sam@example.com", server: server
+    )
+
+    refute status.success?
+    assert_equal false, output["ok"]
+    assert_equal "HTTP_422", output["code"]
+    assert_equal "Fix these checks before you assign it: Prep work is done", output["error"]
+    assert_equal false, output.dig("quality", "passed")
+    assert_equal "prework_done", output.dig("quality", "weakest")
+    assert_match(/^  FAIL  prework_done: 40\. Do the prep first/, stderr)
+  end
+
+  def test_get_and_show_print_the_quality_checks
+    %w[get show].each do |command|
+      body = { id: 9, title: "Send W-9", status: "open", quality: quality(passed: true) }
+      server = StubServer.new(body: JSON.generate(body))
+      output, stderr, status = run_cli("tasks", command, "9", server: server)
+
+      assert status.success?, command
+      assert_equal "/tasks/9.json", server.requests.pop[:target]
+      assert_equal true, output.dig("data", "quality", "passed")
+      assert_match(/^Quality 88 \(weakest: physical_action\), passed$/, stderr)
+    end
+  end
+
+  def test_an_unscored_task_says_so
+    body = { id: 9, title: "Send W-9", status: "open", quality: { score: nil, passed: nil, checks: [] } }
+    server = StubServer.new(body: JSON.generate(body))
+    _output, stderr, = run_cli("tasks", "get", "9", server: server)
+
+    assert_match(/^Quality: not scored yet$/, stderr)
+  end
+
+  def test_check_prints_the_checks_and_exits_zero_when_they_fail
+    server = StubServer.new(body: JSON.generate(quality: quality(passed: false, failing: %w[prework_done])))
+    output, stderr, status = run_cli("tasks", "check", "-t", "Review the website", server: server)
+
+    assert status.success?
+    assert_equal false, output.dig("data", "quality", "passed")
+    assert_match(/FAIL  prework_done/, stderr)
+  end
+
+  def test_the_local_gtd_warning_and_force_flag_are_gone
+    output, stderr, status = run_cli("tasks", "create", "--user", "7", "-t", "test todo", "--force", server: StubServer.new)
+
+    refute status.success?
+    assert_equal "INVALID_ARGUMENT", output["code"]
+    assert_match(/invalid option: --force/, output["error"])
+    refute_match(/GTD warn/, stderr)
+  end
+
+  def test_member_and_admin_create_flags_do_not_mix
+    [
+      [%w[tasks create -t Send-W9 --estimate 5], /--estimate and --source-url need --user/],
+      [%w[tasks create -t Send-W9 --source-url https://x.com/1], /--estimate and --source-url need --user/],
+      [%w[tasks create --user 7 -t Send-W9 --assignee sam@example.com], /--assignee is for the member route/],
+      [%w[tasks create -t Send-W9], /Pass --user EMAIL for someone's board, or --project ID/],
+      [%w[tasks create -t Send-W9 --assignee sam@example.com], /Pass --user EMAIL for someone's board, or --project ID/],
+      [%w[tasks send-back 9], /--note is required/],
+      [%w[tasks check], /--title\/-t is required/]
+    ].each do |args, message|
+      output, _stderr, status = run_cli(*args, server: StubServer.new)
+
+      refute status.success?, args.join(" ")
+      assert_equal "INVALID_ARGUMENT", output["code"], args.join(" ")
+      assert_match message, output["error"], args.join(" ")
+    end
   end
 
   def test_source_url_is_stripped_before_sending

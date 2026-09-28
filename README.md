@@ -125,7 +125,17 @@ todos-cli tasks update 99 --user 12 --field ein=12-3456789 --notes "Received"
 todos-cli tasks destroy 99 --user 12
 ```
 
-Create, update, and destroy are admin nested routes and require `--user`.
+`tasks create --user` is the admin nested route. Without `--user` it is the
+member route (`POST /tasks.json`): a task in one of your projects, for you or
+for `--assignee EMAIL` (an active member of that project). `--star` stars it.
+`--estimate` and `--source-url` need `--user`.
+
+The server scores every task on 7 checks. `tasks check -t TITLE` scores a
+draft without saving it. `create`, `get`, and `show` print the score and each
+check on stderr, with the hint for each fail. A refused create (422) exits 1
+and puts `quality` in the envelope.
+
+Update and destroy are admin nested routes and require `--user`.
 `--schema` accepts either a JSON array or `@path.json`. Repeated `--field`
 arguments produce the top-level `response` object accepted by nested updates.
 
@@ -135,14 +145,17 @@ arguments produce the top-level `response` object accepted by nested updates.
 todos-cli tasks submit 99 --field ein=12-3456789
 todos-cli tasks submit 99 --user andy@example.com
 todos-cli tasks approve 99 --user andy@example.com
+todos-cli tasks approve 99
+todos-cli tasks send-back 99 --note "Add the invoice number"
+todos-cli tasks star 99 [--off]
 todos-cli tasks reopen 99
 todos-cli tasks reopen 99 --user andy@example.com --note "Need clearer scan"
 todos-cli tasks cancel 99
 todos-cli tasks cancel 99 --user andy@example.com
 ```
 
-Without `--user`, submit, reopen, and cancel use the authenticated user's own
-task routes. With `--user`, they use admin nested routes. Admin submit does not
+Without `--user`, submit, reopen, cancel, approve, send-back, and star use the
+authenticated user's own task routes. With `--user`, they use admin nested routes. Admin submit does not
 accept response fields; update/respond while the task is open first. A reopen
 note is available only on the admin nested route because it can notify the
 client.

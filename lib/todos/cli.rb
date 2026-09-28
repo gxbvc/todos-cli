@@ -23,12 +23,16 @@ module Todos
         todos-cli projects list --user <id|email>
         todos-cli projects create --user <id|email> -t TITLE [--area ID] [--status STATUS] [--position N]
         todos-cli tasks list [--user <id|email>] [--project ID] [--status STATUS]
-        todos-cli tasks get <id> [--user <id|email>]
-        todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description HTML] [--due DATE] [--estimate N] [--source-url URL] [--schema JSON|@file] [--force]
+        todos-cli tasks get|show <id> [--user <id|email>]
+        todos-cli tasks check -t TITLE [--description HTML] [--schema JSON|@file]
+        todos-cli tasks create -t TITLE --project ID [--assignee EMAIL] [--description HTML] [--due DATE] [--schema JSON|@file] [--star]
+        todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description HTML] [--due DATE] [--estimate N] [--source-url URL] [--schema JSON|@file] [--star]
         todos-cli tasks update <id> --user <id|email> [--title TITLE] [--project ID] [--description HTML] [--due DATE] [--estimate N] [--source-url URL] [--schema JSON|@file] [--field key=value] [--notes TEXT]
         todos-cli tasks destroy <id> --user <id|email>
         todos-cli tasks submit <id> [--user <id|email>] [--field key=value]
-        todos-cli tasks approve <id> --user <id|email>
+        todos-cli tasks approve <id> [--user <id|email>]
+        todos-cli tasks send-back <id> --note TEXT
+        todos-cli tasks star <id> [--off] [--user <id|email>]
         todos-cli tasks reopen <id> [--user <id|email>] [--note TEXT]
         todos-cli tasks cancel <id> [--user <id|email>]
         todos-cli tasks remind <id> --user <id|email>
@@ -36,15 +40,24 @@ module Todos
 
       Every task must be a next physical action.
       Rules and examples: write-human-todos skill.
+      The server scores every task on 7 checks; create, get, and check print them on stderr.
     TEXT
 
     def self.run(args, client: Client.new, out: $stdout, err: $stderr)
-      data = new(args, client: client).execute
+      data = new(args, client: client, err: err).execute
       out.puts(JSON.generate(ok: true, data: data))
       0
     rescue Todos::Error => e
       err.puts(e.message)
-      out.puts(JSON.generate(ok: false, error: e.message, code: e.code))
+      envelope = { ok: false, error: e.message, code: e.code }
+      # A create or edit the quality gate refused: say which checks failed and
+      # how to fix each one, and keep the whole object for agents.
+      quality = e.details && e.details["quality"]
+      if quality.is_a?(Hash)
+        print_quality(err, quality)
+        envelope[:quality] = quality
+      end
+      out.puts(JSON.generate(envelope))
       1
     rescue StandardError => e
       message = "Unexpected error: #{e.message}"
@@ -53,9 +66,29 @@ module Todos
       1
     end
 
-    def initialize(args, client:)
+    # The server's quality breakdown, for people: the score, then each check,
+    # with the hint on each fail.
+    def self.print_quality(err, quality)
+      if quality["score"].nil?
+        err.puts("Quality: not scored yet")
+        return
+      end
+
+      verdict = quality["passed"] ? "passed" : "failed"
+      err.puts("Quality #{quality["score"]} (weakest: #{quality["weakest"]}), #{verdict}")
+      Array(quality["checks"]).each do |check|
+        mark = check["passed"] ? "pass" : "FAIL"
+        blocks = check["blocking"] ? "" : " (does not block)"
+        line = "  #{mark}  #{check["id"]}#{blocks}: #{check["score"]}"
+        line += ". #{check["hint"]}" unless check["passed"]
+        err.puts(line)
+      end
+    end
+
+    def initialize(args, client:, err: $stderr)
       @args = args.dup
       @client = client
+      @err = err
       @users = nil
     end
 
@@ -175,18 +208,21 @@ module Todos
       subcommand = @args.shift
       case subcommand
       when "list" then tasks_list
-      when "get" then tasks_get
+      when "get", "show" then tasks_get
+      when "check" then tasks_check
       when "create" then tasks_create
       when "update" then tasks_update
       when "destroy" then tasks_destroy
       when "approve" then tasks_approve
+      when "send-back" then tasks_send_back
+      when "star" then tasks_star
       when "submit" then tasks_submit
       when "reopen" then tasks_reopen
       when "cancel" then tasks_cancel
       when "remind" then tasks_remind
       when "respond" then tasks_respond
       else
-        fail_usage!("Usage: todos-cli tasks <list|get|create|update|destroy|approve|submit|reopen|cancel|remind|respond>")
+        fail_usage!("Usage: todos-cli tasks <list|get|show|check|create|update|destroy|approve|send-back|star|submit|reopen|cancel|remind|respond>")
       end
     end
 
@@ -207,27 +243,59 @@ module Todos
       id = required_positional!("task id")
       parse_options(@args, user: true)
       ensure_no_args!
-      request(:get, "/tasks/#{id}.json")
+      with_quality(request(:get, "/tasks/#{id}.json"))
     end
 
+    # Score a draft without saving it (POST /quality_checks.json). Exits 0
+    # either way; data.quality.passed says whether every check passed.
+    def tasks_check
+      options = parse_options(@args, title: true, description: true, schema: true)
+      ensure_no_args!
+      body = { title: required_option!(options[:title], "--title/-t") }
+      body[:description] = options[:description] if options.key?(:description)
+      body[:fields_schema] = parse_schema(options[:schema]) if options.key?(:schema)
+      result = request(:post, "/quality_checks.json", body: body)
+      self.class.print_quality(@err, result["quality"]) if result.is_a?(Hash) && result["quality"].is_a?(Hash)
+      result
+    end
+
+    # Two routes. With --user: the admin's nested create on that person's
+    # board. Without it: the member create (POST /tasks.json) in one of my
+    # projects, for me or for --assignee, an active member of that project.
+    # The server scores it; a refusal (422) prints the failed checks.
     def tasks_create
       options = parse_options(
         @args,
-        user: true, title: true, project: true, description: true, due: true, estimate: true,
-        source_url: true, schema: true, force: true
+        user: true, title: true, project: true, assignee: true, description: true, due: true, estimate: true,
+        source_url: true, schema: true, star: true
       )
       ensure_no_args!
-      user_id = require_user!(options[:user])
       title = required_option!(options[:title], "--title/-t")
-      warn_gtd!(title, options[:description]) unless options[:force]
       task = { title: title }
       task[:project_id] = options[:project] if options.key?(:project)
       task[:description] = options[:description] if options.key?(:description)
       task[:due_date] = options[:due] if options.key?(:due)
-      task[:estimated_minutes] = options[:estimate] if options.key?(:estimate)
-      task[:source_url] = options[:source_url] if options.key?(:source_url)
       task[:fields_schema] = parse_schema(options[:schema]) if options.key?(:schema)
-      request(:post, "/users/#{user_id}/tasks.json", body: { task: task })
+      task[:starred] = true if options[:star]
+
+      if options[:user]
+        if options.key?(:assignee)
+          raise Error.new("--assignee is for the member route; --user already names who does it", code: "INVALID_ARGUMENT")
+        end
+        task[:estimated_minutes] = options[:estimate] if options.key?(:estimate)
+        task[:source_url] = options[:source_url] if options.key?(:source_url)
+        return with_quality(request(:post, "/users/#{resolve_user(options[:user])}/tasks.json", body: { task: task }))
+      end
+
+      if options.key?(:estimate) || options.key?(:source_url)
+        raise Error.new("--estimate and --source-url need --user (admin create)", code: "INVALID_ARGUMENT")
+      end
+      # A forgotten --user must fail, not land a client's to-do on my board.
+      unless options.key?(:project)
+        raise Error.new("Pass --user EMAIL for someone's board, or --project ID (and --assignee EMAIL) for a shared project", code: "INVALID_ARGUMENT")
+      end
+      task[:assignee_email] = options[:assignee] if options.key?(:assignee)
+      with_quality(request(:post, "/tasks.json", body: { task: task }))
     end
 
     def tasks_update
@@ -265,11 +333,37 @@ module Todos
       request(:delete, "/users/#{require_user!(options[:user])}/tasks/#{id}.json")
     end
 
+    # Without --user: the reviewer's route (a to-do I asked for). With it:
+    # the admin's nested route.
     def tasks_approve
       id = required_positional!("task id")
       options = parse_options(@args, user: true)
       ensure_no_args!
-      request(:patch, "/users/#{require_user!(options[:user])}/tasks/#{id}/approve.json")
+      return request(:patch, "/tasks/#{id}/approve.json") unless options[:user]
+
+      request(:patch, "/users/#{resolve_user(options[:user])}/tasks/#{id}/approve.json")
+    end
+
+    # The reviewer sends a checked-off to-do back with a note (mailed to the
+    # assignee). The admin's nested equivalent is reopen --user --note.
+    def tasks_send_back
+      id = required_positional!("task id")
+      options = parse_options(@args, note: true)
+      ensure_no_args!
+      note = required_option!(options[:note].to_s.strip, "--note")
+      request(:patch, "/tasks/#{id}/send_back.json", body: { note: note })
+    end
+
+    # Star (or --off to unstar): the assignee or the reviewer; the admin with
+    # --user.
+    def tasks_star
+      id = required_positional!("task id")
+      options = parse_options(@args, user: true, off: true)
+      ensure_no_args!
+      body = { starred: !options[:off] }
+      return request(:patch, "/tasks/#{id}/star.json", body: body) unless options[:user]
+
+      request(:patch, "/users/#{resolve_user(options[:user])}/tasks/#{id}/star.json", body: body)
     end
 
     def tasks_submit
@@ -425,6 +519,7 @@ module Todos
         parser.on("-t", "--title TITLE") { |value| options[:title] = value }
       end
       parser.on("--project ID") { |value| options[:project] = value } if allowed[:project]
+      parser.on("--assignee EMAIL") { |value| options[:assignee] = value } if allowed[:assignee]
       parser.on("--area ID") { |value| options[:area] = value } if allowed[:area]
       parser.on("--description HTML") { |value| options[:description] = value } if allowed[:description]
       parser.on("--due DATE") { |value| options[:due] = value } if allowed[:due]
@@ -441,7 +536,8 @@ module Todos
       parser.on("--field KEY=VALUE") { |value| (options[:fields] ||= []) << value } if allowed[:fields]
       parser.on("--notes TEXT") { |value| options[:notes] = value } if allowed[:notes]
       parser.on("--note TEXT") { |value| options[:note] = value } if allowed[:note]
-      parser.on("--force") { options[:force] = true } if allowed[:force]
+      parser.on("--star") { options[:star] = true } if allowed[:star]
+      parser.on("--off") { options[:off] = true } if allowed[:off]
       parser.parse!(args)
       options
     rescue OptionParser::ParseError => e
@@ -450,14 +546,10 @@ module Todos
       raise Error.new(e.message, code: "INVALID_ARGUMENT")
     end
 
-    def warn_gtd!(title, description)
-      reasons = []
-      reasons << "weak title verb" if title.match?(/\A(Review|Handle|Look into|Think about|Work on|Address)\b/i)
-      reasons << "test title" if title.match?(/\Atest\b/i)
-      reasons << "empty description" if description.to_s.gsub(/<[^>]+>/, "").strip.empty?
-      return if reasons.empty?
-
-      $stderr.puts "GTD warn (#{reasons.join(", ")}): title must be a next physical action, description must stand alone. Skill: write-human-todos. Pass --force to skip."
+    # Print the task's quality checks on stderr and return the task as is.
+    def with_quality(task)
+      self.class.print_quality(@err, task["quality"]) if task.is_a?(Hash) && task["quality"].is_a?(Hash)
+      task
     end
 
     def positive_integer(value, name)
