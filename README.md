@@ -88,8 +88,10 @@ todos-cli projects create --user andy@example.com -t "Onboarding"
 todos-cli projects create --user 12 -t "Tax filings" --area 3 --status active --position 0
 todos-cli projects create -t "TAP intake" --area 4
 todos-cli projects invite 12 --email sue@example.com
+todos-cli areas invite 52 --email sue@example.com
 todos-cli invites list
 todos-cli invites accept project-4 --area 3
+todos-cli invites accept area-2
 ```
 
 Without `--user`, `board` reads the authenticated user's own board. `areas list`
@@ -112,12 +114,21 @@ or a pending invite sent again) or `already_member` (nothing sent). A refusal
 (not the owner, a bad email, the 20-an-hour limit) exits 1 with the server's
 reason. The reply never says whether the email has an account.
 
-`invites list` shows the project invites sent to your own account email
-(`GET /invites.json`): `id` (like `project-4`), `project` `{id, title}`, the
-inviter by name, and `expires_at`. `invites accept <id> [--area ID]` joins one
-(`POST /invites/:id/accept.json`) and files it in one of your areas, or in your
-"Shared" area. `data` is the project as `GET /projects.json` shows it. Any
-invite you cannot accept (not yours, expired, revoked, used) is `HTTP_404`.
+`areas invite <id> --email EMAIL` emails a one-time link to join a whole area
+you own (`POST /areas/:id/invites.json`). It shares every project you own in
+that area, now and later. It never shares projects other people shared with you
+that you filed there. The reply and refusals work like `projects invite`.
+
+`invites list` shows the project and area invites sent to your own account
+email (`GET /invites.json`): `id` (like `project-4` or `area-2`), `kind`,
+`project` or `area` `{id, title}`, the inviter by name, and `expires_at`.
+`invites accept <id> [--area ID]` joins one (`POST /invites/:id/accept.json`).
+A project goes in one of your areas, or in your "Shared" area; `data` is the
+project as `GET /projects.json` shows it. An area's projects go in one of your
+areas, or in a new area named after it ("TriGate (Ricky)"); `data` is
+`{area, filed_area_id, projects}`. Any invite you cannot accept (not yours,
+expired, revoked, used) is `HTTP_404`. `GET /projects.json` rows name each
+project's `owner`.
 An invited project is not on your board until you accept, so `board` and
 `tasks list` print `You have N open invites. Run: todos-cli invites list` on
 stderr when there are any.

@@ -20,6 +20,7 @@ module Todos
         todos-cli board [--user <id|email>]
         todos-cli areas list --user <id|email>
         todos-cli areas create --user <id|email> -t TITLE [--position N] [--active true|false]
+        todos-cli areas invite <id> --email EMAIL
         todos-cli projects list --user <id|email>
         todos-cli projects create -t TITLE [--area ID]
         todos-cli projects create --user <id|email> -t TITLE [--area ID] [--status STATUS] [--position N]
@@ -153,8 +154,9 @@ module Todos
       case subcommand
       when "list" then areas_list
       when "create" then areas_create
+      when "invite" then areas_invite
       else
-        fail_usage!("Usage: todos-cli areas <list|create>")
+        fail_usage!("Usage: todos-cli areas <list|create|invite>")
       end
     end
 
@@ -174,6 +176,18 @@ module Todos
       area[:position] = options[:position] if options.key?(:position)
       area[:active] = options[:active] if options.key?(:active)
       request(:post, "/users/#{user_id}/areas.json", body: { area: area })
+    end
+
+    # Email someone a link to join a whole area I own: every project I own in
+    # it, now and later, never projects others shared with me that I filed
+    # there. data.status is invited or already_member; a refusal (not the
+    # owner, bad email, rate limit) exits 1 with the server's reason.
+    def areas_invite
+      id = required_positional!("area id")
+      options = parse_options(@args, email: true)
+      ensure_no_args!
+      email = required_option!(options[:email], "--email")
+      request(:post, "/areas/#{id}/invites.json", body: { email: email })
     end
 
     def projects
@@ -237,8 +251,8 @@ module Todos
       request(:post, "/projects/#{id}/invites.json", body: { email: email })
     end
 
-    # Project invites sent to my own email (GET /invites.json). An invited
-    # project is not on my board until I accept.
+    # Project and area invites sent to my own email (GET /invites.json). An
+    # invited project or area is not on my board until I accept.
     def invites
       subcommand = @args.shift
       case subcommand
@@ -251,15 +265,18 @@ module Todos
       end
     end
 
-    # Join the project, filed in one of my areas (--area) or my Shared area.
-    # data is the project as projects.json shows it. Any invite I cannot
-    # accept (not mine, expired, revoked, used) is the same NOT_FOUND.
+    # Join the project (project-4), filed in one of my areas (--area) or my
+    # Shared area; data is the project as projects.json shows it. Or join the
+    # area (area-2), its projects filed in one of my areas (--area) or a new
+    # area named after it; data is { area, filed_area_id, projects }. Any
+    # invite I cannot accept (not mine, expired, revoked, used) is the same
+    # NOT_FOUND.
     def invites_accept
       id = required_positional!("invite id")
       options = parse_options(@args, area: true)
       ensure_no_args!
       unless id.match?(/\A[a-z]+-\d+\z/)
-        raise Error.new("Invite id looks like project-4 (from todos-cli invites list)", code: "INVALID_ARGUMENT")
+        raise Error.new("Invite id looks like project-4 or area-2 (from todos-cli invites list)", code: "INVALID_ARGUMENT")
       end
 
       body = {}

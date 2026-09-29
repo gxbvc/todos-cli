@@ -213,6 +213,20 @@ class TodosCliTest < Minitest::Test
         target: "/invites/project-4/accept.json",
         body: { "area_id" => "9" },
         response: { body: JSON.generate(id: 150, title: "TriGate (internal)", role: "member", area_id: 9) }
+      },
+      {
+        args: %w[areas invite 52 --email sue@tap.test],
+        method: "POST",
+        target: "/areas/52/invites.json",
+        body: { "email" => "sue@tap.test" },
+        response: { body: JSON.generate(status: "invited", invite: { id: 2, email: "sue@tap.test" }) }
+      },
+      {
+        args: %w[invites accept area-2],
+        method: "POST",
+        target: "/invites/area-2/accept.json",
+        body: {},
+        response: { body: JSON.generate(area: { id: 52, title: "TriGate" }, filed_area_id: 9, projects: []) }
       }
     ]
 
@@ -517,6 +531,18 @@ class TodosCliTest < Minitest::Test
     refute status.success?
     assert_equal "/invites/project-4/accept.json", server.requests.pop[:target]
     assert_equal "HTTP_404", output["code"]
+  end
+
+  def test_areas_invite_needs_an_email_and_reports_the_servers_reason
+    output, _stderr, status = run_cli("areas", "invite", "52", server: StubServer.new)
+    refute status.success?
+    assert_equal false, output["ok"]
+
+    server = StubServer.new(status: 403, body: JSON.generate(status: "refused", reason: "Only the area owner can invite people."))
+    output, stderr, status = run_cli("areas", "invite", "52", "--email", "x@tap.test", server: server)
+    refute status.success?
+    assert_equal "Only the area owner can invite people.", output["error"]
+    assert_includes stderr, "Only the area owner can invite people."
   end
 
   def test_board_and_tasks_list_say_when_invites_are_waiting
