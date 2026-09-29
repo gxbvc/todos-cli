@@ -83,6 +83,7 @@ todos-cli board --user andy@example.com
 todos-cli areas list --user andy@example.com
 todos-cli areas create --user andy@example.com -t "BrightView"
 todos-cli areas create --user 12 -t "BrightView" --position 1 --active true
+todos-cli projects list
 todos-cli projects list --user andy@example.com
 todos-cli projects create --user andy@example.com -t "Onboarding"
 todos-cli projects create --user 12 -t "Tax filings" --area 3 --status active --position 0
@@ -94,10 +95,12 @@ todos-cli invites accept project-4 --area 3
 todos-cli invites accept area-2
 ```
 
-Without `--user`, `board` reads the authenticated user's own board. `areas list`
-and `projects list` require `--user` and flatten from that user's board
-(`GET /users/:id.json`). Areas include `id`, `title`, `position`, `active`, and
-`project_count`. Projects include `area_id` and `area_title`.
+Without `--user`, `board` reads the authenticated user's own board, and
+`projects list` reads your own projects (`GET /projects.json`: members, your
+`area_id`, and `external`). `areas list` requires `--user`; it and
+`projects list --user` flatten from that user's board (`GET /users/:id.json`).
+Areas include `id`, `title`, `position`, `active`, and `project_count`.
+Projects include `area_id` and `area_title`.
 
 Area create is an admin nested route and requires `--user`. Project create with
 `--user` is the admin route on that person's board. Without `--user` it makes a
@@ -171,6 +174,22 @@ invited to it or its area who has not joined yet: the task waits on the invite,
 `data.assignee` is null and `data.waiting_for_invite.id` names the invite, and
 it lands on them when they accept). `--star` stars it.
 `--estimate` and `--source-url` need `--user`.
+
+Internal or external: a project is external for you when someone who can see
+it, or will once invites are accepted, has an email domain other than yours
+(on free mail such as gmail.com, everyone else counts). This is a guess from
+email domains, not proof of who works where. `projects list` rows (without
+`--user`, relative to you; with `--user`, still relative to you, not to that
+person) and every
+task's `project` carry `external` and `audience` (`members`, `pending`,
+`outside`: counts only). On the member route the server refuses a task in an
+external project (exit 1, `HTTP_422`, `audience` in the envelope) unless you
+pass `--allow-external`. Use an internal project unless the user names an
+external one. After any create or update in an external project, stderr says
+`EXTERNAL: <project> is an external project: N people outside your email
+domain can see this task.` The admin route (`--user`) is not checked, so it
+takes no `--allow-external`; `tasks update` has none either, because it cannot
+move a task through a checked route.
 
 The server scores every task on 7 checks. `tasks check -t TITLE` scores a
 draft without saving it. `create`, `get`, and `show` print the score and each

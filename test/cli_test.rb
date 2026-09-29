@@ -531,6 +531,75 @@ class TodosCliTest < Minitest::Test
     assert_equal "pat@partner.test", JSON.parse(server.requests.pop[:body]).dig("task", "assignee_email")
   end
 
+  def external_task(outside: 1)
+    { id: 31, title: "Send the signed contract", status: "open", quality: quality(passed: true, failing: []),
+      project: { id: 12, title: "Partner work", external: true, audience: { members: 3, pending: 0, outside: outside } } }
+  end
+
+  def test_allow_external_is_sent_next_to_the_task_only_when_given
+    server = StubServer.new(status: 201, body: JSON.generate(external_task))
+    _output, stderr, status = run_cli("tasks", "create", "-t", "Send the signed contract", "--project", "12", "--allow-external", server: server)
+    assert status.success?
+    assert_equal true, JSON.parse(server.requests.pop[:body])["allow_external"]
+    assert_includes stderr, "EXTERNAL: Partner work is an external project: 1 person outside your email domain can see this task."
+
+    server = StubServer.new(status: 201, body: JSON.generate(external_task(outside: 2)))
+    _output, stderr, = run_cli("tasks", "create", "-t", "Send the signed contract", "--project", "12", server: server)
+    refute JSON.parse(server.requests.pop[:body]).key?("allow_external")
+    assert_includes stderr, "2 people outside your email domain"
+  end
+
+  def test_an_internal_project_prints_no_external_line
+    body = external_task.merge(project: { id: 3, title: "Launch", external: false, audience: { members: 2, pending: 0, outside: 0 } })
+    _output, stderr, status = run_cli("tasks", "create", "-t", "Send it", "--project", "3", server: StubServer.new(status: 201, body: JSON.generate(body)))
+    assert status.success?
+    refute_match(/EXTERNAL/, stderr)
+  end
+
+  def test_the_external_refusal_says_how_to_go_on
+    body = { error: "This project is external: 1 person outside your email domain can see it. Resend with allow_external: true if you meant it.",
+             audience: { members: 3, pending: 0, outside: 1 } }
+    output, stderr, status = run_cli("tasks", "create", "-t", "Send it", "--project", "12", server: StubServer.new(status: 422, body: JSON.generate(body)))
+    refute status.success?
+    assert_equal "HTTP_422", output["code"]
+    assert_equal({ "members" => 3, "pending" => 0, "outside" => 1 }, output["audience"])
+    assert_includes stderr, "Pick an internal project, or pass --allow-external only if the user named this one."
+  end
+
+  def test_admin_writes_print_the_external_line_and_refuse_the_flag
+    _output, stderr, = run_cli("tasks", "create", "--user", "7", "-t", "Send it", server: StubServer.new(status: 201, body: JSON.generate(external_task)))
+    assert_includes stderr, "EXTERNAL: Partner work"
+    _output, stderr, = run_cli("tasks", "update", "31", "--user", "7", "--title", "Send it now", server: StubServer.new(body: JSON.generate(external_task)))
+    assert_includes stderr, "EXTERNAL: Partner work"
+
+    output, _stderr, status = run_cli("tasks", "create", "--user", "7", "-t", "Send it", "--allow-external", server: StubServer.new)
+    refute status.success?
+    assert_equal "INVALID_ARGUMENT", output["code"]
+    output, = run_cli("tasks", "update", "31", "--user", "7", "--allow-external", server: StubServer.new)
+    assert_equal "INVALID_ARGUMENT", output["code"], "update cannot move a task through a checked route, so it has no flag"
+  end
+
+  def test_projects_list_shows_external
+    board = { user: { id: 7 }, areas: [{ id: 1, title: "Clients", external: true, projects: [
+      { id: 12, title: "Partner work", external: true, audience: { members: 3, pending: 0, outside: 1 }, tasks: [] }
+    ] }] }
+    output, = run_cli("projects", "list", "--user", "7", server: StubServer.new(body: JSON.generate(board)))
+    assert_equal true, output["data"][0]["external"]
+    assert_equal({ "members" => 3, "pending" => 0, "outside" => 1 }, output["data"][0]["audience"])
+  end
+
+  def test_projects_list_without_user_reads_my_projects
+    rows = [{ "id" => 12, "title" => "Partner work", "external" => true, "audience" => { "members" => 3, "pending" => 0, "outside" => 1 } }]
+    server = StubServer.new(body: JSON.generate(projects: rows, open_invites: 0))
+    output, _stderr, status = run_cli("projects", "list", server: server)
+
+    assert status.success?
+    assert_equal rows, output["data"]
+    request = server.requests.pop
+    assert_equal "GET", request[:method]
+    assert_equal "/projects.json", request[:target]
+  end
+
   def test_usage_says_assignee_can_be_an_invited_person
     output, = run_cli("help", server: StubServer.new)
     assert_includes output.dig("data", "usage"), "lands on them when they accept"

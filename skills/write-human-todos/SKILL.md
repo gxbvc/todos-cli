@@ -138,6 +138,10 @@ marking done is enough.
 A short outcome title (`Website launch`, `Anthropic billing`). Describe the
 finished state, not a task list. Todos hold the next actions.
 
+On todo.gxb.vc, put a todo in an internal project unless the user names an
+external one (`external: true`: people outside your email domain can see it),
+and only then pass `allow_external` (`--allow-external` in todos-cli).
+
 ## When to split
 
 Rewrite or split when:

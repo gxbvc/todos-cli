@@ -14,7 +14,7 @@ todos-cli board [--user <id|email>]
 todos-cli areas list --user <id|email>
 todos-cli areas create --user <id|email> -t TITLE [--position N] [--active true|false]
 todos-cli areas invite <id> --email EMAIL
-todos-cli projects list --user <id|email>
+todos-cli projects list [--user <id|email>]
 todos-cli projects create --user <id|email> -t TITLE [--area ID] [--status active|waiting|someday|completed] [--position N]
 todos-cli projects create -t TITLE [--area ID]
 todos-cli projects invite <id> --email EMAIL
@@ -49,6 +49,7 @@ The server scores every task on 7 checks (Jev). `tasks create`, `tasks get`/`sho
 
 - `--user` selects admin cross-user routes; email lookup via `users list` requires an admin key.
 - `tasks create` without `--user` is the member route (`POST /tasks.json`): a task in one of my projects, for me or for `--assignee EMAIL` (an active member of that project, or someone I invited to it or its area who has not joined yet: the task waits, `data.assignee` is null, `data.waiting_for_invite.id` names the invite, and it lands on them when they accept). `--project` is required on this route, so a forgotten `--user` fails. `--estimate` and `--source-url` need `--user`.
+- Internal or external: `projects list` rows (without `--user`: my own projects, `GET /projects.json`) and each task's `project` carry `external` (someone outside my email domain can see it, or will once invites are accepted) and `audience` counts. Use an internal project unless the user names an external one. Only then pass `--allow-external` on the member `tasks create`; without it the server refuses (exit 1, `HTTP_422`). Writes in an external project print an `EXTERNAL:` line on stderr. The admin route (`--user`) is not checked and takes no flag.
 - `projects create` without `--user` is the member route (`POST /projects.json`): a project I own, in one of my own areas. It prints "No --user: making the project in your own board." on stderr, so a forgotten `--user` is seen. `projects invite <id> --email EMAIL` is the owner's invite (`POST /projects/:id/invites.json`); `data.status` is `added` (a colleague at my own work email domain with an account joined at once, no link), `invited`, or `already_member`; a refusal exits 1 with the server's reason.
 - `areas invite <id> --email EMAIL` shares a whole area I own (`POST /areas/:id/invites.json`): every project I own in it, now and later, never projects others shared with me that I filed there. Same reply and refusals as `projects invite`.
 - `invites list` shows the project and area invites sent to my own account email (`GET /invites.json`). `invites accept <id> [--area ID]` joins one (`POST /invites/:id/accept.json`, id like `project-4` or `area-2`), filed in one of my areas, else my Shared area (project) or a new area named after it (area). Any invite I cannot accept is `HTTP_404`. Only accept an invite the user asked you to. An invited project is not on my board until I accept, so `board` and `tasks list` print `You have N open invites. Run: todos-cli invites list` on stderr when there are any.

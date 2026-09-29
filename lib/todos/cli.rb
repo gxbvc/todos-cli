@@ -21,7 +21,7 @@ module Todos
         todos-cli areas list --user <id|email>
         todos-cli areas create --user <id|email> -t TITLE [--position N] [--active true|false]
         todos-cli areas invite <id> --email EMAIL
-        todos-cli projects list --user <id|email>
+        todos-cli projects list [--user <id|email>]
         todos-cli projects create -t TITLE [--area ID]
         todos-cli projects create --user <id|email> -t TITLE [--area ID] [--status STATUS] [--position N]
         todos-cli projects invite <id> --email EMAIL
@@ -30,7 +30,7 @@ module Todos
         todos-cli tasks list [--user <id|email>] [--project ID] [--status STATUS]
         todos-cli tasks get|show <id> [--user <id|email>]
         todos-cli tasks check -t TITLE [--description HTML] [--schema JSON|@file]
-        todos-cli tasks create -t TITLE --project ID [--assignee EMAIL] [--description HTML] [--due DATE] [--schema JSON|@file] [--star]
+        todos-cli tasks create -t TITLE --project ID [--assignee EMAIL] [--description HTML] [--due DATE] [--schema JSON|@file] [--star] [--allow-external]
         todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description HTML] [--due DATE] [--estimate N] [--source-url URL] [--schema JSON|@file] [--star]
         todos-cli tasks update <id> --user <id|email> [--title TITLE] [--project ID] [--description HTML] [--due DATE] [--estimate N] [--source-url URL] [--schema JSON|@file] [--field key=value] [--notes TEXT]
         todos-cli tasks destroy <id> --user <id|email>
@@ -48,6 +48,9 @@ module Todos
       The server scores every task on 7 checks; create, get, and check print them on stderr.
       tasks create --assignee can name someone you invited to that project (or its area) who has
       not joined yet: the task waits on the invite and lands on them when they accept.
+      A project is external when people outside your email domain can see it (projects list: external).
+      Use an internal project unless the user names an external one; only then pass --allow-external.
+      Writes in an external project print an EXTERNAL line on stderr.
     TEXT
 
     def self.run(args, client: Client.new, out: $stdout, err: $stderr)
@@ -63,6 +66,12 @@ module Todos
       if quality.is_a?(Hash)
         print_quality(err, quality)
         envelope[:quality] = quality
+      end
+      # The server refused a task in a project that is external for me.
+      audience = e.details && e.details["audience"]
+      if audience.is_a?(Hash)
+        err.puts("Pick an internal project, or pass --allow-external only if the user named this one.")
+        envelope[:audience] = audience
       end
       out.puts(JSON.generate(envelope))
       1
@@ -205,9 +214,20 @@ module Todos
       end
     end
 
+    # Two routes. With --user: the admin's flattened view of that person's
+    # board. Without it: my own projects (GET /projects.json), with members,
+    # and external relative to me.
     def projects_list
       options = parse_options(@args, user: true)
       ensure_no_args!
+      unless options[:user]
+        payload = request(:get, "/projects.json")
+        projects = payload.is_a?(Hash) ? payload["projects"] : nil
+        raise Error.new("Projects response did not include projects", code: "INVALID_RESPONSE") unless projects.is_a?(Array)
+
+        return projects
+      end
+
       user_id = require_user!(options[:user])
       flatten_projects(board_for(user_id))
     end
@@ -371,12 +391,13 @@ module Todos
     # or someone I invited to it or its area who has not joined yet (the
     # task waits: data.assignee is null and data.waiting_for_invite has the
     # invite id). The server scores it; a refusal (422) prints the failed
-    # checks.
+    # checks. A project that is external for me needs --allow-external on
+    # this route (todo plan 20d); the admin route is not checked.
     def tasks_create
       options = parse_options(
         @args,
         user: true, title: true, project: true, assignee: true, description: true, due: true, estimate: true,
-        source_url: true, schema: true, star: true
+        source_url: true, schema: true, star: true, allow_external: true
       )
       ensure_no_args!
       title = required_option!(options[:title], "--title/-t")
@@ -391,9 +412,12 @@ module Todos
         if options.key?(:assignee)
           raise Error.new("--assignee is for the member route; --user already names who does it", code: "INVALID_ARGUMENT")
         end
+        if options[:allow_external]
+          raise Error.new("--allow-external is for the member route; the admin route (--user) is not checked", code: "INVALID_ARGUMENT")
+        end
         task[:estimated_minutes] = options[:estimate] if options.key?(:estimate)
         task[:source_url] = options[:source_url] if options.key?(:source_url)
-        return with_quality(request(:post, "/users/#{resolve_user(options[:user])}/tasks.json", body: { task: task }))
+        return note_external(with_quality(request(:post, "/users/#{resolve_user(options[:user])}/tasks.json", body: { task: task })))
       end
 
       if options.key?(:estimate) || options.key?(:source_url)
@@ -404,7 +428,9 @@ module Todos
         raise Error.new("Pass --user EMAIL for someone's board, or --project ID (and --assignee EMAIL) for a shared project", code: "INVALID_ARGUMENT")
       end
       task[:assignee_email] = options[:assignee] if options.key?(:assignee)
-      result = with_quality(request(:post, "/tasks.json", body: { task: task }))
+      body = { task: task }
+      body[:allow_external] = true if options[:allow_external]
+      result = note_external(with_quality(request(:post, "/tasks.json", body: body)))
       if result.is_a?(Hash) && (waiting = result.dig("waiting_for_invite", "id"))
         @err.puts("Waiting on invite #{waiting}: it lands on them when they accept.")
       end
@@ -436,7 +462,7 @@ module Todos
       body[:notes] = options[:notes] if options.key?(:notes)
       raise Error.new("Nothing to update", code: "INVALID_ARGUMENT") if body.empty?
 
-      request(:patch, "/users/#{user_id}/tasks/#{id}.json", body: body)
+      note_external(request(:patch, "/users/#{user_id}/tasks/#{id}.json", body: body))
     end
 
     def tasks_destroy
@@ -652,12 +678,26 @@ module Todos
       parser.on("--note TEXT") { |value| options[:note] = value } if allowed[:note]
       parser.on("--star") { options[:star] = true } if allowed[:star]
       parser.on("--off") { options[:off] = true } if allowed[:off]
+      parser.on("--allow-external") { options[:allow_external] = true } if allowed[:allow_external]
       parser.parse!(args)
       options
     rescue OptionParser::ParseError => e
       raise Error.new(e.message, code: "INVALID_ARGUMENT")
     rescue ArgumentError => e
       raise Error.new(e.message, code: "INVALID_ARGUMENT")
+    end
+
+    # After a write: one stderr line when the task's project is external for
+    # me (people outside my email domain can see it, or will once invites
+    # are accepted). Counts only. Returns the task as is.
+    def note_external(task)
+      project = task.is_a?(Hash) ? task["project"] : nil
+      return task unless project.is_a?(Hash) && project["external"] == true
+
+      outside = project.dig("audience", "outside").to_i
+      people = outside == 1 ? "1 person" : "#{outside} people"
+      @err.puts("EXTERNAL: #{project["title"]} is an external project: #{people} outside your email domain can see this task.")
+      task
     end
 
     # Print the task's quality checks on stderr and return the task as is.
