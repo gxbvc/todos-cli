@@ -206,6 +206,13 @@ class TodosCliTest < Minitest::Test
         target: "/projects/12/invites.json",
         body: { "email" => "sue@tap.test" },
         response: { body: JSON.generate(status: "invited", invite: { id: 3, email: "sue@tap.test" }) }
+      },
+      {
+        args: %w[invites accept project-4 --area 9],
+        method: "POST",
+        target: "/invites/project-4/accept.json",
+        body: { "area_id" => "9" },
+        response: { body: JSON.generate(id: 150, title: "TriGate (internal)", role: "member", area_id: 9) }
       }
     ]
 
@@ -480,6 +487,56 @@ class TodosCliTest < Minitest::Test
     server = StubServer.new(body: JSON.generate(status: "already_member"))
     output, = run_cli("projects", "invite", "12", "--email", "sam@tap.test", server: server)
     assert_equal({ "ok" => true, "data" => { "status" => "already_member" } }, output)
+  end
+
+  def test_invites_list_returns_the_rows
+    invites = [{ "id" => "project-4", "kind" => "project", "project" => { "id" => 150, "title" => "TriGate (internal)" },
+                 "inviter" => { "name" => "Ricky" }, "expires_at" => "2026-10-13T19:25:00Z" }]
+    server = StubServer.new(body: JSON.generate(invites: invites))
+    output, _stderr, status = run_cli("invites", "list", server: server)
+
+    assert status.success?
+    assert_equal invites, output["data"]
+    request = server.requests.pop
+    assert_equal "GET", request[:method]
+    assert_equal "/invites.json", request[:target]
+  end
+
+  def test_invites_accept_checks_the_id_and_reports_not_found
+    server = StubServer.new
+    output, _stderr, status = run_cli("invites", "accept", "../users/1", server: server)
+    refute status.success?
+    assert_equal "INVALID_ARGUMENT", output["code"]
+    assert_empty server.requests
+
+    output, = run_cli("invites", "accept", server: StubServer.new)
+    assert_equal false, output["ok"]
+
+    server = StubServer.new(status: 404, body: JSON.generate(error: "Not found"))
+    output, _stderr, status = run_cli("invites", "accept", "project-4", server: server)
+    refute status.success?
+    assert_equal "/invites/project-4/accept.json", server.requests.pop[:target]
+    assert_equal "HTTP_404", output["code"]
+  end
+
+  def test_board_and_tasks_list_say_when_invites_are_waiting
+    board = JSON.generate(user: { id: 1 }, areas: [], open_invites: 4)
+
+    _output, stderr, status = run_cli("board", server: StubServer.new(body: board))
+    assert status.success?
+    assert_includes stderr, "You have 4 open invites. Run: todos-cli invites list"
+
+    output, stderr, = run_cli("tasks", "list", server: StubServer.new(body: board))
+    assert_equal [], output["data"]
+    assert_includes stderr, "You have 4 open invites. Run: todos-cli invites list"
+
+    one = JSON.generate(user: { id: 1 }, areas: [], open_invites: 1)
+    _output, stderr, = run_cli("board", server: StubServer.new(body: one))
+    assert_includes stderr, "You have 1 open invite. Run: todos-cli invites list"
+
+    none = JSON.generate(user: { id: 1 }, areas: [], open_invites: 0)
+    _output, stderr, = run_cli("board", server: StubServer.new(body: none))
+    refute_match(/invite/, stderr)
   end
 
   def test_204_is_success_with_null_data

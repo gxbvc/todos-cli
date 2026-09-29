@@ -24,6 +24,8 @@ module Todos
         todos-cli projects create -t TITLE [--area ID]
         todos-cli projects create --user <id|email> -t TITLE [--area ID] [--status STATUS] [--position N]
         todos-cli projects invite <id> --email EMAIL
+        todos-cli invites list
+        todos-cli invites accept <id> [--area ID]
         todos-cli tasks list [--user <id|email>] [--project ID] [--status STATUS]
         todos-cli tasks get|show <id> [--user <id|email>]
         todos-cli tasks check -t TITLE [--description HTML] [--schema JSON|@file]
@@ -103,6 +105,7 @@ module Todos
       when "areas" then areas
       when "projects" then projects
       when "tasks" then tasks
+      when "invites" then invites
       when "help", "-h", "--help", nil then { usage: USAGE }
       else
         fail_usage!("Unknown command: #{command}")
@@ -142,7 +145,7 @@ module Todos
     def board
       options = parse_options(@args, user: true)
       ensure_no_args!
-      board_for(options[:user])
+      board_for(options[:user]).tap { |payload| note_open_invites(payload) }
     end
 
     def areas
@@ -234,6 +237,46 @@ module Todos
       request(:post, "/projects/#{id}/invites.json", body: { email: email })
     end
 
+    # Project invites sent to my own email (GET /invites.json). An invited
+    # project is not on my board until I accept.
+    def invites
+      subcommand = @args.shift
+      case subcommand
+      when "list"
+        ensure_no_args!
+        request(:get, "/invites.json")["invites"]
+      when "accept" then invites_accept
+      else
+        fail_usage!("Usage: todos-cli invites <list|accept>")
+      end
+    end
+
+    # Join the project, filed in one of my areas (--area) or my Shared area.
+    # data is the project as projects.json shows it. Any invite I cannot
+    # accept (not mine, expired, revoked, used) is the same NOT_FOUND.
+    def invites_accept
+      id = required_positional!("invite id")
+      options = parse_options(@args, area: true)
+      ensure_no_args!
+      unless id.match?(/\A[a-z]+-\d+\z/)
+        raise Error.new("Invite id looks like project-4 (from todos-cli invites list)", code: "INVALID_ARGUMENT")
+      end
+
+      body = {}
+      body[:area_id] = options[:area] if options.key?(:area)
+      request(:post, "/invites/#{id}/accept.json", body: body)
+    end
+
+    # The board carries my open invite count. Say it on stderr so an agent
+    # reading only data still sees it.
+    def note_open_invites(payload)
+      count = payload.is_a?(Hash) ? payload["open_invites"] : nil
+      return unless count.is_a?(Integer) && count.positive?
+
+      noun = count == 1 ? "invite" : "invites"
+      @err.puts("You have #{count} open #{noun}. Run: todos-cli invites list")
+    end
+
     def tasks
       subcommand = @args.shift
       case subcommand
@@ -263,7 +306,9 @@ module Todos
         raise Error.new("Status must be one of: #{STATUSES.join(", ")}", code: "INVALID_ARGUMENT")
       end
 
-      tasks = flatten_tasks(board_for(options[:user]))
+      payload = board_for(options[:user])
+      note_open_invites(payload)
+      tasks = flatten_tasks(payload)
       tasks.select! { |task| task["project_id"].to_s == options[:project].to_s } if options[:project]
       tasks.select! { |task| task["status"] == options[:status] } if options[:status]
       tasks
