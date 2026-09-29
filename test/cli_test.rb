@@ -503,6 +503,39 @@ class TodosCliTest < Minitest::Test
     assert_equal({ "ok" => true, "data" => { "status" => "already_member" } }, output)
   end
 
+  def test_projects_and_areas_invite_say_when_a_colleague_was_added_at_once
+    added = JSON.generate(status: "added", member: { id: 5, name: "Ricky Bureau" })
+    output, stderr, status = run_cli("projects", "invite", "12", "--email", "ricky@gxb.vc", server: StubServer.new(body: added))
+    assert status.success?
+    assert_equal({ "status" => "added", "member" => { "id" => 5, "name" => "Ricky Bureau" } }, output["data"])
+    assert_includes stderr, "Ricky Bureau is on the project now (same work email domain). No invite was sent."
+
+    _output, stderr, = run_cli("areas", "invite", "52", "--email", "ricky@gxb.vc", server: StubServer.new(body: added))
+    assert_includes stderr, "Ricky Bureau is on the area now"
+
+    invited = JSON.generate(status: "invited", invite: { id: 3, email: "sue@tap.test" })
+    _output, stderr, = run_cli("projects", "invite", "12", "--email", "sue@tap.test", server: StubServer.new(body: invited))
+    refute_match(/No invite was sent/, stderr)
+  end
+
+  def test_create_for_an_invited_person_says_it_waits
+    body = { id: 31, title: "Send the signed contract", status: "open", assignee: nil,
+             waiting_for_invite: { id: "project-4", expired: false }, quality: quality(passed: true, failing: []) }
+    server = StubServer.new(status: 201, body: JSON.generate(body))
+    output, stderr, status = run_cli("tasks", "create", "-t", "Send the signed contract", "--project", "12",
+                                     "--assignee", "pat@partner.test", server: server)
+
+    assert status.success?
+    assert_nil output.dig("data", "assignee")
+    assert_includes stderr, "Waiting on invite project-4: it lands on them when they accept."
+    assert_equal "pat@partner.test", JSON.parse(server.requests.pop[:body]).dig("task", "assignee_email")
+  end
+
+  def test_usage_says_assignee_can_be_an_invited_person
+    output, = run_cli("help", server: StubServer.new)
+    assert_includes output.dig("data", "usage"), "lands on them when they accept"
+  end
+
   def test_invites_list_returns_the_rows
     invites = [{ "id" => "project-4", "kind" => "project", "project" => { "id" => 150, "title" => "TriGate (internal)" },
                  "inviter" => { "name" => "Ricky" }, "expires_at" => "2026-10-13T19:25:00Z" }]

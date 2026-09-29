@@ -110,9 +110,12 @@ Valid project statuses are `active`, `waiting`, `someday`, and `completed`.
 
 `projects invite <id> --email EMAIL` emails a one-time link to join a project
 you own (`POST /projects/:id/invites.json`). `data.status` is `invited` (sent,
-or a pending invite sent again) or `already_member` (nothing sent). A refusal
-(not the owner, a bad email, the 20-an-hour limit) exits 1 with the server's
-reason. The reply never says whether the email has an account.
+or a pending invite sent again) or `already_member` (nothing sent). A colleague
+at your own work email domain (not gmail.com and the like) who already has an
+account is `added` at once instead: `data.member` names them, they get a notice
+email with no link, and stderr says "No invite was sent." Otherwise the reply
+never says whether the email has an account. A refusal (not the owner, a bad
+email, the 20-an-hour limit) exits 1 with the server's reason.
 
 `areas invite <id> --email EMAIL` emails a one-time link to join a whole area
 you own (`POST /areas/:id/invites.json`). It shares every project you own in
@@ -163,7 +166,10 @@ todos-cli tasks destroy 99 --user 12
 
 `tasks create --user` is the admin nested route. Without `--user` it is the
 member route (`POST /tasks.json`): a task in one of your projects, for you or
-for `--assignee EMAIL` (an active member of that project). `--star` stars it.
+for `--assignee EMAIL` (an active member of that project, or someone you
+invited to it or its area who has not joined yet: the task waits on the invite,
+`data.assignee` is null and `data.waiting_for_invite.id` names the invite, and
+it lands on them when they accept). `--star` stars it.
 `--estimate` and `--source-url` need `--user`.
 
 The server scores every task on 7 checks. `tasks check -t TITLE` scores a

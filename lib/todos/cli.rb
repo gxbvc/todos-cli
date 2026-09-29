@@ -46,6 +46,8 @@ module Todos
       Every task must be a next physical action.
       Rules and examples: write-human-todos skill.
       The server scores every task on 7 checks; create, get, and check print them on stderr.
+      tasks create --assignee can name someone you invited to that project (or its area) who has
+      not joined yet: the task waits on the invite and lands on them when they accept.
     TEXT
 
     def self.run(args, client: Client.new, out: $stdout, err: $stderr)
@@ -180,14 +182,16 @@ module Todos
 
     # Email someone a link to join a whole area I own: every project I own in
     # it, now and later, never projects others shared with me that I filed
-    # there. data.status is invited or already_member; a refusal (not the
-    # owner, bad email, rate limit) exits 1 with the server's reason.
+    # there. data.status is added (a colleague at my own work email domain
+    # with an account joined at once, no link), invited, or already_member;
+    # a refusal (not the owner, bad email, rate limit) exits 1 with the
+    # server's reason.
     def areas_invite
       id = required_positional!("area id")
       options = parse_options(@args, email: true)
       ensure_no_args!
       email = required_option!(options[:email], "--email")
-      request(:post, "/areas/#{id}/invites.json", body: { email: email })
+      note_added(request(:post, "/areas/#{id}/invites.json", body: { email: email }), "area")
     end
 
     def projects
@@ -240,15 +244,25 @@ module Todos
       request(:post, "/users/#{user_id}/projects.json", body: { project: project })
     end
 
-    # Email someone a link to join a project I own. data.status is invited or
-    # already_member; a refusal (not the owner, bad email, rate limit) exits 1
-    # with the server's reason.
+    # Email someone a link to join a project I own. data.status is added (a
+    # colleague at my own work email domain with an account joined at once,
+    # no link), invited, or already_member; a refusal (not the owner, bad
+    # email, rate limit) exits 1 with the server's reason.
     def projects_invite
       id = required_positional!("project id")
       options = parse_options(@args, email: true)
       ensure_no_args!
       email = required_option!(options[:email], "--email")
-      request(:post, "/projects/#{id}/invites.json", body: { email: email })
+      note_added(request(:post, "/projects/#{id}/invites.json", body: { email: email }), "project")
+    end
+
+    # An immediate share sends no link, so say so on stderr.
+    def note_added(result, kind)
+      if result.is_a?(Hash) && result["status"] == "added"
+        name = result.dig("member", "name") || "They"
+        @err.puts("#{name} is on the #{kind} now (same work email domain). No invite was sent.")
+      end
+      result
     end
 
     # Project and area invites sent to my own email (GET /invites.json). An
@@ -353,8 +367,11 @@ module Todos
 
     # Two routes. With --user: the admin's nested create on that person's
     # board. Without it: the member create (POST /tasks.json) in one of my
-    # projects, for me or for --assignee, an active member of that project.
-    # The server scores it; a refusal (422) prints the failed checks.
+    # projects, for me or for --assignee, an active member of that project,
+    # or someone I invited to it or its area who has not joined yet (the
+    # task waits: data.assignee is null and data.waiting_for_invite has the
+    # invite id). The server scores it; a refusal (422) prints the failed
+    # checks.
     def tasks_create
       options = parse_options(
         @args,
@@ -387,7 +404,11 @@ module Todos
         raise Error.new("Pass --user EMAIL for someone's board, or --project ID (and --assignee EMAIL) for a shared project", code: "INVALID_ARGUMENT")
       end
       task[:assignee_email] = options[:assignee] if options.key?(:assignee)
-      with_quality(request(:post, "/tasks.json", body: { task: task }))
+      result = with_quality(request(:post, "/tasks.json", body: { task: task }))
+      if result.is_a?(Hash) && (waiting = result.dig("waiting_for_invite", "id"))
+        @err.puts("Waiting on invite #{waiting}: it lands on them when they accept.")
+      end
+      result
     end
 
     def tasks_update
