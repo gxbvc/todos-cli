@@ -55,6 +55,12 @@ class TodosCliTest < Minitest::Test
         body: { "note" => "Add-the-invoice-number" }
       },
       {
+        args: [ "tasks", "decline", "9", "--reason", "  I need Ricky's login for this.  " ],
+        method: "PATCH",
+        target: "/tasks/9/decline.json",
+        body: { "reason" => "I need Ricky's login for this." }
+      },
+      {
         args: %w[tasks star 9],
         method: "PATCH",
         target: "/tasks/9/star.json",
@@ -380,6 +386,10 @@ class TodosCliTest < Minitest::Test
       [%w[tasks create -t Send-W9], /Pass --user EMAIL for someone's board, or --project ID/],
       [%w[tasks create -t Send-W9 --assignee sam@example.com], /Pass --user EMAIL for someone's board, or --project ID/],
       [%w[tasks send-back 9], /--note is required/],
+      [%w[tasks decline 9], /--reason is required/],
+      [[ "tasks", "decline", "9", "--reason", "   " ], /--reason is required/],
+      [%w[tasks decline 9 --reason No --user 7], /invalid option: --user/],
+      [%w[tasks decline --reason No], /task id/],
       [%w[tasks check], /--title\/-t is required/]
     ].each do |args, message|
       output, _stderr, status = run_cli(*args, server: StubServer.new)

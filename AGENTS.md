@@ -33,6 +33,7 @@ todos-cli tasks star <id> [--off] [--user <id|email>]
 todos-cli tasks submit <id> [--user <id|email>] [--field key=value]
 todos-cli tasks reopen <id> [--user <id|email>] [--note TEXT]
 todos-cli tasks cancel <id> [--user <id|email>]
+todos-cli tasks decline <id> --reason TEXT
 todos-cli tasks remind <id> --user <id|email>
 todos-cli tasks respond <id> [--user <id|email>] --field key=value [--field key=value] [--notes TEXT]
 ```
@@ -56,6 +57,7 @@ The server scores every task on 7 checks (Jev). `tasks create`, `tasks get`/`sho
 - Update and destroy require `--user`.
 - `approve` and `star` use my own route without `--user` (I am the reviewer, or for `star` the assignee) and the admin route with it. `send-back` is the reviewer's route only; the admin equivalent is `reopen --user --note`.
 - Submit uses the admin route with `--user`, otherwise self; `reopen --note` requires `--user`.
+- `decline <id> --reason TEXT` is the assignee's route only (`PATCH /tasks/:id/decline.json`): it cancels an open to-do someone else gave me and emails them the reason. `--reason` is required; there is no `--user`. On a to-do I wrote for myself, use `cancel` (decline is `HTTP_422`). Decline only when the user says they will not do it, and pass their reason in their words.
 
 Requires a tool-local `.env` with `TODOS_API_KEY` and `TODOS_BASE_URL`; mint keys in todo.gxb.vc Settings, not via this CLI.
 

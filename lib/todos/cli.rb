@@ -40,6 +40,7 @@ module Todos
         todos-cli tasks star <id> [--off] [--user <id|email>]
         todos-cli tasks reopen <id> [--user <id|email>] [--note TEXT]
         todos-cli tasks cancel <id> [--user <id|email>]
+        todos-cli tasks decline <id> --reason TEXT
         todos-cli tasks remind <id> --user <id|email>
         todos-cli tasks respond <id> [--user <id|email>] --field key=value [--field key=value] [--notes TEXT]
 
@@ -343,10 +344,11 @@ module Todos
       when "submit" then tasks_submit
       when "reopen" then tasks_reopen
       when "cancel" then tasks_cancel
+      when "decline" then tasks_decline
       when "remind" then tasks_remind
       when "respond" then tasks_respond
       else
-        fail_usage!("Usage: todos-cli tasks <list|get|show|check|create|update|destroy|approve|send-back|star|submit|reopen|cancel|remind|respond>")
+        fail_usage!("Usage: todos-cli tasks <list|get|show|check|create|update|destroy|approve|send-back|star|submit|reopen|cancel|decline|remind|respond>")
       end
     end
 
@@ -548,6 +550,18 @@ module Todos
       request(:patch, path)
     end
 
+    # The assignee will not do an open to-do someone else gave them: it is
+    # canceled with the reason, and the person who asked gets it by email.
+    # Member route only (I must be the assignee); a to-do I wrote for
+    # myself I cancel instead.
+    def tasks_decline
+      id = required_positional!("task id")
+      options = parse_options(@args, reason: true)
+      ensure_no_args!
+      reason = required_option!(options[:reason].to_s.strip, "--reason")
+      request(:patch, "/tasks/#{id}/decline.json", body: { reason: reason })
+    end
+
     # Admin-only, like approve/destroy: re-sends TaskMailer#reminder for one
     # to-do without touching its status or assignment state.
     def tasks_remind
@@ -676,6 +690,7 @@ module Todos
       parser.on("--field KEY=VALUE") { |value| (options[:fields] ||= []) << value } if allowed[:fields]
       parser.on("--notes TEXT") { |value| options[:notes] = value } if allowed[:notes]
       parser.on("--note TEXT") { |value| options[:note] = value } if allowed[:note]
+      parser.on("--reason TEXT") { |value| options[:reason] = value } if allowed[:reason]
       parser.on("--star") { options[:star] = true } if allowed[:star]
       parser.on("--off") { options[:off] = true } if allowed[:off]
       parser.on("--allow-external") { options[:allow_external] = true } if allowed[:allow_external]
