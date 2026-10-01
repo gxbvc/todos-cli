@@ -30,9 +30,9 @@ module Todos
         todos-cli tasks list [--user <id|email>] [--project ID] [--status STATUS]
         todos-cli tasks get|show <id> [--user <id|email>]
         todos-cli tasks check -t TITLE [--description HTML] [--schema JSON|@file]
-        todos-cli tasks create -t TITLE --project ID [--assignee EMAIL] [--description HTML] [--due DATE] [--schema JSON|@file] [--star] [--allow-external]
-        todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description HTML] [--due DATE] [--estimate N] [--source-url URL] [--schema JSON|@file] [--star]
-        todos-cli tasks update <id> --user <id|email> [--title TITLE] [--project ID] [--description HTML] [--due DATE] [--estimate N] [--source-url URL] [--schema JSON|@file] [--field key=value] [--notes TEXT]
+        todos-cli tasks create -t TITLE --project ID [--assignee EMAIL] [--description HTML] [--due DATE] [--due-time HH:MM] [--schema JSON|@file] [--star] [--allow-external]
+        todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description HTML] [--due DATE] [--due-time HH:MM] [--estimate N] [--source-url URL] [--schema JSON|@file] [--star]
+        todos-cli tasks update <id> --user <id|email> [--title TITLE] [--project ID] [--description HTML] [--due DATE] [--due-time HH:MM] [--estimate N] [--source-url URL] [--schema JSON|@file] [--field key=value] [--notes TEXT]
         todos-cli tasks destroy <id> --user <id|email>
         todos-cli tasks submit <id> [--user <id|email>] [--field key=value]
         todos-cli tasks approve <id> [--user <id|email>]
@@ -52,6 +52,8 @@ module Todos
       A project is external when people outside your email domain can see it (projects list: external).
       Use an internal project unless the user names an external one; only then pass --allow-external.
       Writes in an external project print an EXTERNAL line on stderr.
+      --due-time HH:MM is 24-hour Central time and goes with --due. On update, --due-time "" clears the
+      time and --due "" clears the date and the time.
     TEXT
 
     def self.run(args, client: Client.new, out: $stdout, err: $stderr)
@@ -398,7 +400,7 @@ module Todos
     def tasks_create
       options = parse_options(
         @args,
-        user: true, title: true, project: true, assignee: true, description: true, due: true, estimate: true,
+        user: true, title: true, project: true, assignee: true, description: true, due: true, due_time: true, estimate: true,
         source_url: true, schema: true, star: true, allow_external: true
       )
       ensure_no_args!
@@ -407,6 +409,10 @@ module Todos
       task[:project_id] = options[:project] if options.key?(:project)
       task[:description] = options[:description] if options.key?(:description)
       task[:due_date] = options[:due] if options.key?(:due)
+      if options[:due_time].to_s != ""
+        raise Error.new("--due-time needs --due DATE", code: "INVALID_ARGUMENT") if options[:due].to_s.empty?
+        task[:due_time] = options[:due_time]
+      end
       task[:fields_schema] = parse_schema(options[:schema]) if options.key?(:schema)
       task[:starred] = true if options[:star]
 
@@ -443,7 +449,7 @@ module Todos
       id = required_positional!("task id")
       options = parse_options(
         @args,
-        user: true, title: true, project: true, description: true, due: true,
+        user: true, title: true, project: true, description: true, due: true, due_time: true,
         estimate: true, source_url: true, schema: true, fields: true, notes: true
       )
       ensure_no_args!
@@ -454,6 +460,7 @@ module Todos
       task[:project_id] = options[:project] if options.key?(:project)
       task[:description] = options[:description] if options.key?(:description)
       task[:due_date] = options[:due] if options.key?(:due)
+      task[:due_time] = options[:due_time] if options.key?(:due_time)
       task[:estimated_minutes] = options[:estimate] if options.key?(:estimate)
       task[:source_url] = options[:source_url] if options.key?(:source_url)
       task[:fields_schema] = parse_schema(options[:schema]) if options.key?(:schema)
@@ -676,7 +683,8 @@ module Todos
       parser.on("--email EMAIL") { |value| options[:email] = value } if allowed[:email]
       parser.on("--area ID") { |value| options[:area] = value } if allowed[:area]
       parser.on("--description HTML") { |value| options[:description] = value } if allowed[:description]
-      parser.on("--due DATE") { |value| options[:due] = value } if allowed[:due]
+      parser.on("--due DATE") { |value| options[:due] = due_date(value) } if allowed[:due]
+      parser.on("--due-time HH:MM") { |value| options[:due_time] = due_time(value) } if allowed[:due_time]
       parser.on("--estimate N") { |value| options[:estimate] = positive_integer(value, "--estimate") } if allowed[:estimate]
       parser.on("--source-url URL") { |value| options[:source_url] = source_url(value) } if allowed[:source_url]
       parser.on("--schema JSON") { |value| options[:schema] = value } if allowed[:schema]
@@ -719,6 +727,31 @@ module Todos
     def with_quality(task)
       self.class.print_quality(@err, task["quality"]) if task.is_a?(Hash) && task["quality"].is_a?(Hash)
       task
+    end
+
+    # A day only. A time in --due would be dropped by the server without a
+    # word, so it is refused here and pointed at --due-time.
+    def due_date(value)
+      value = value.strip
+      if value.match?(/\d{1,2}:\d{2}/)
+        raise Error.new("--due takes a date (YYYY-MM-DD); pass the time with --due-time HH:MM", code: "INVALID_ARGUMENT")
+      end
+
+      value
+    end
+
+    # "15:00" (24-hour, Central time on the server), "9:05" becomes "09:05",
+    # and "" clears the time on update.
+    def due_time(value)
+      value = value.strip
+      return "" if value.empty?
+
+      match = value.match(/\A(\d{1,2}):(\d{2})\z/)
+      unless match && match[1].to_i < 24 && match[2].to_i < 60
+        raise Error.new("--due-time must be HH:MM, 24-hour Central time (for example 15:00), or \"\" to clear it", code: "INVALID_ARGUMENT")
+      end
+
+      format("%02d:%02d", match[1].to_i, match[2].to_i)
     end
 
     def positive_integer(value, name)

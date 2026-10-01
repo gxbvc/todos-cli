@@ -31,6 +31,36 @@ class TodosCliTest < Minitest::Test
         }
       },
       {
+        args: %w[tasks create -t Send-W9 --project 3 --due 2026-10-02 --due-time 9:05],
+        method: "POST",
+        target: "/tasks.json",
+        body: { "task" => { "title" => "Send-W9", "project_id" => "3", "due_date" => "2026-10-02", "due_time" => "09:05" } }
+      },
+      {
+        args: %w[tasks create --user 7 -t Send-W9 --due 2026-10-02 --due-time 15:00],
+        method: "POST",
+        target: "/users/7/tasks.json",
+        body: { "task" => { "title" => "Send-W9", "due_date" => "2026-10-02", "due_time" => "15:00" } }
+      },
+      {
+        args: %w[tasks update 9 --user 7 --due-time 17:30],
+        method: "PATCH",
+        target: "/users/7/tasks/9.json",
+        body: { "task" => { "due_time" => "17:30" } }
+      },
+      {
+        args: [ "tasks", "update", "9", "--user", "7", "--due-time", "" ],
+        method: "PATCH",
+        target: "/users/7/tasks/9.json",
+        body: { "task" => { "due_time" => "" } }
+      },
+      {
+        args: [ "tasks", "update", "9", "--user", "7", "--due", "" ],
+        method: "PATCH",
+        target: "/users/7/tasks/9.json",
+        body: { "task" => { "due_date" => "" } }
+      },
+      {
         args: %w[tasks create --user 7 -t Send-W9 --star],
         method: "POST",
         target: "/users/7/tasks.json",
@@ -386,6 +416,12 @@ class TodosCliTest < Minitest::Test
       [%w[tasks create -t Send-W9], /Pass --user EMAIL for someone's board, or --project ID/],
       [%w[tasks create -t Send-W9 --assignee sam@example.com], /Pass --user EMAIL for someone's board, or --project ID/],
       [%w[tasks send-back 9], /--note is required/],
+      [%w[tasks create -t Send-W9 --project 3 --due-time 15:00], /--due-time needs --due DATE/],
+      [%w[tasks create -t Send-W9 --project 3 --due 2026-10-02 --due-time 25:00], /--due-time must be HH:MM/],
+      [%w[tasks create -t Send-W9 --project 3 --due 2026-10-02 --due-time 3pm], /--due-time must be HH:MM/],
+      [%w[tasks update 9 --user 7 --due-time 12:60], /--due-time must be HH:MM/],
+      [%w[tasks create -t Send-W9 --project 3 --due 2026-10-02T15:00], /--due takes a date \(YYYY-MM-DD\); pass the time with --due-time/],
+      [%w[tasks decline 9 --reason No --due-time 15:00], /invalid option: --due-time/],
       [%w[tasks decline 9], /--reason is required/],
       [[ "tasks", "decline", "9", "--reason", "   " ], /--reason is required/],
       [%w[tasks decline 9 --reason No --user 7], /invalid option: --user/],

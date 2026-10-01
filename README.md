@@ -163,6 +163,9 @@ todos-cli tasks create --user andy@example.com \
 todos-cli tasks create --user 12 -t "Upload your signed W-9 to this card" --schema @schema.json
 
 todos-cli tasks update 99 --user 12 --title "Send signed W-9" --due 2026-08-20
+todos-cli tasks create -t "Call the bank at 214-555-0100 before it closes" --project 3 --due 2026-10-02 --due-time 15:30
+todos-cli tasks update 99 --user 12 --due-time 09:00
+todos-cli tasks update 99 --user 12 --due-time ""
 todos-cli tasks update 99 --user 12 --field ein=12-3456789 --notes "Received"
 todos-cli tasks destroy 99 --user 12
 ```
@@ -174,6 +177,15 @@ invited to it or its area who has not joined yet: the task waits on the invite,
 `data.assignee` is null and `data.waiting_for_invite.id` names the invite, and
 it lands on them when they accept). `--star` stars it.
 `--estimate` and `--source-url` need `--user`.
+
+Due dates: `--due YYYY-MM-DD` is the day. `--due-time HH:MM` adds a time, in
+24-hour Central time (America/Chicago, the app's one time zone), for example
+`--due-time 15:30`. On create it needs `--due`. On update it can come alone,
+when the task already has a day; a new `--due` alone keeps the time. On update,
+`--due-time ""` clears the time and keeps the day, and `--due ""` clears both.
+A time inside `--due` (such as `2026-10-02T15:00`) is refused, because the
+server would keep only the day. Every task JSON has `due_date` and `due_at`
+(ISO 8601 with the Central offset, or null when there is no time).
 
 Internal or external: a project is external for you when someone who can see
 it, or will once invites are accepted, has an email domain other than yours

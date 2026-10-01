@@ -23,9 +23,9 @@ todos-cli invites accept <id> [--area ID]
 todos-cli tasks list [--user <id|email>] [--project ID] [--status open|submitted|approved|canceled]
 todos-cli tasks get|show <id> [--user <id|email>]
 todos-cli tasks check -t TITLE [--description HTML] [--schema JSON|@file]
-todos-cli tasks create -t TITLE --project ID [--assignee EMAIL] [--description HTML] [--due DATE] [--schema JSON|@file] [--star]
-todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description HTML] [--due DATE] [--estimate N] [--source-url URL] [--schema JSON|@file] [--star]
-todos-cli tasks update <id> --user <id|email> [--title TITLE] [--project ID] [--description HTML] [--due DATE] [--estimate N] [--source-url URL] [--schema JSON|@file] [--field key=value] [--notes TEXT]
+todos-cli tasks create -t TITLE --project ID [--assignee EMAIL] [--description HTML] [--due DATE] [--due-time HH:MM] [--schema JSON|@file] [--star]
+todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description HTML] [--due DATE] [--due-time HH:MM] [--estimate N] [--source-url URL] [--schema JSON|@file] [--star]
+todos-cli tasks update <id> --user <id|email> [--title TITLE] [--project ID] [--description HTML] [--due DATE] [--due-time HH:MM] [--estimate N] [--source-url URL] [--schema JSON|@file] [--field key=value] [--notes TEXT]
 todos-cli tasks destroy <id> --user <id|email>
 todos-cli tasks approve <id> [--user <id|email>]
 todos-cli tasks send-back <id> --note TEXT
@@ -55,6 +55,7 @@ The server scores every task on 7 checks (Jev). `tasks create`, `tasks get`/`sho
 - `areas invite <id> --email EMAIL` shares a whole area I own (`POST /areas/:id/invites.json`): every project I own in it, now and later, never projects others shared with me that I filed there. Same reply and refusals as `projects invite`.
 - `invites list` shows the project and area invites sent to my own account email (`GET /invites.json`). `invites accept <id> [--area ID]` joins one (`POST /invites/:id/accept.json`, id like `project-4` or `area-2`), filed in one of my areas, else my Shared area (project) or a new area named after it (area). Any invite I cannot accept is `HTTP_404`. Only accept an invite the user asked you to. An invited project is not on my board until I accept, so `board` and `tasks list` print `You have N open invites. Run: todos-cli invites list` on stderr when there are any.
 - Update and destroy require `--user`.
+- Due: `--due YYYY-MM-DD` is the day; `--due-time HH:MM` is a time in 24-hour Central time (America/Chicago). On create, `--due-time` needs `--due`. On update it can come alone, a new `--due` keeps the time, `--due-time ""` clears the time, and `--due ""` clears both. Never put a time in `--due` (refused). Task JSON has `due_at` (ISO 8601, Central offset) or null.
 - `approve` and `star` use my own route without `--user` (I am the reviewer, or for `star` the assignee) and the admin route with it. `send-back` is the reviewer's route only; the admin equivalent is `reopen --user --note`.
 - Submit uses the admin route with `--user`, otherwise self; `reopen --note` requires `--user`.
 - `decline <id> --reason TEXT` is the assignee's route only (`PATCH /tasks/:id/decline.json`): it cancels an open to-do someone else gave me and emails them the reason. `--reason` is required; there is no `--user`. On a to-do I wrote for myself, use `cancel` (decline is `HTTP_422`). Decline only when the user says they will not do it, and pass their reason in their words.
