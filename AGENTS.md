@@ -34,7 +34,8 @@ todos-cli tasks star <id> [--off] [--user <id|email>]
 todos-cli tasks submit <id> [--user <id|email>] [--field key=value]
 todos-cli tasks reopen <id> [--user <id|email>] [--note TEXT]
 todos-cli tasks cancel <id> [--user <id|email>]
-todos-cli tasks decline <id> --reason TEXT
+todos-cli tasks block <id> --reason TEXT
+todos-cli tasks unblock <id> [--note TEXT]
 todos-cli tasks remind <id> --user <id|email>
 todos-cli tasks respond <id> [--user <id|email>] --field key=value [--field key=value] [--notes TEXT]
 ```
@@ -61,7 +62,7 @@ The server scores every task on 7 checks (Jev). `tasks create`, `tasks get`/`sho
 - Due: `--due YYYY-MM-DD` is the day; `--due-time HH:MM` is a time in 24-hour Central time (America/Chicago). On create, `--due-time` needs `--due`. On update it can come alone, a new `--due` keeps the time, `--due-time ""` clears the time, and `--due ""` clears both. Never put a time in `--due` (refused). Task JSON has `due_at` (ISO 8601, Central offset) or null.
 - `approve` and `star` use my own route without `--user` (I am the reviewer, or for `star` the assignee) and the admin route with it. `send-back` is the reviewer's route only; the admin equivalent is `reopen --user --note`.
 - Submit uses the admin route with `--user`, otherwise self; `reopen --note` requires `--user`.
-- `decline <id> --reason TEXT` is the assignee's route only (`PATCH /tasks/:id/decline.json`): it cancels an open to-do someone else gave me and emails them the reason. `--reason` is required; there is no `--user`. On a to-do I wrote for myself, use `cancel` (decline is `HTTP_422`). Decline only when the user says they will not do it, and pass their reason in their words.
+- Blocked: `block <id> --reason TEXT` is the assignee's route only (`PATCH /tasks/:id/block.json`): when I cannot do an open to-do someone else gave me without something from them, it goes to their court (status `blocked`, never canceled) with what I need, and they get it in their email batch. `--reason` is required; there is no `--user`; on a to-do I wrote for myself, use `cancel` (`HTTP_422`). `unblock <id> [--note TEXT]` is the asker's (`PATCH /tasks/:id/unblock.json`): after they add what was needed (an `update`, or the note), it goes back to the assignee, open; the note lands on the card and in the assignee's email. `--status blocked` filters `tasks list`. Decline is gone.
 
 Requires a tool-local `.env` with `TODOS_API_KEY` and `TODOS_BASE_URL`; mint keys in todo.gxb.vc Settings, not via this CLI.
 

@@ -248,7 +248,8 @@ todos-cli tasks reopen 99
 todos-cli tasks reopen 99 --user andy@example.com --note "Need clearer scan"
 todos-cli tasks cancel 99
 todos-cli tasks cancel 99 --user andy@example.com
-todos-cli tasks decline 99 --reason "I need Ricky's login for this. He can do it in 2 minutes."
+todos-cli tasks block 99 --reason "The Stripe login. It is not in 1Password."
+todos-cli tasks unblock 99 --note "Added it to 1Password under Stripe."
 ```
 
 Without `--user`, submit, reopen, cancel, approve, send-back, and star use the
@@ -257,13 +258,19 @@ accept response fields; update/respond while the task is open first. A reopen
 note is available only on the admin nested route because it can notify the
 client.
 
-`tasks decline` is for the assignee of an open to-do that someone else gave
-them. The to-do is canceled with the reason, and the person who asked for it
-gets an email with the reason and a link. `--reason` is required. There is
-no `--user` form: only the assignee can decline. A to-do you wrote for
-yourself you cancel instead (the server answers `HTTP_422`). The reviewer and
-other members get `HTTP_403`. The task JSON then has
-`declined: {by, at, reason}`.
+`tasks block` is for the assignee of an open to-do that someone else gave
+them, when they cannot do it without something from that person. The to-do
+goes to their court (status `blocked`; it is not canceled), with what is
+needed, and they get it in their email batch (every to-do email waits up to
+5 minutes and goes out with the others). `--reason` is required, and there is
+no `--user` form. A to-do you wrote for yourself you cancel instead
+(`HTTP_422`). The reviewer and other members get `HTTP_403`.
+
+`tasks unblock` is for the person who asked: after they add what was needed
+(with `tasks update`, or in `--note`), the to-do goes back to the assignee,
+open. The note lands on the card's notes and in the assignee's email. The
+task JSON has `blocked: {by, at, reason}` while it is blocked. Decline is gone;
+past declines stay canceled, with `declined: {by, at, reason}`.
 
 ### Responses and notes
 

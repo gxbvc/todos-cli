@@ -9,7 +9,7 @@ require "todos/error"
 
 module Todos
   class CLI
-    STATUSES = %w[open submitted approved canceled].freeze
+    STATUSES = %w[open submitted approved canceled blocked].freeze
     PROJECT_STATUSES = %w[active waiting someday completed].freeze
     USAGE = <<~TEXT.freeze
       Usage:
@@ -41,7 +41,8 @@ module Todos
         todos-cli tasks star <id> [--off] [--user <id|email>]
         todos-cli tasks reopen <id> [--user <id|email>] [--note TEXT]
         todos-cli tasks cancel <id> [--user <id|email>]
-        todos-cli tasks decline <id> --reason TEXT
+        todos-cli tasks block <id> --reason TEXT
+        todos-cli tasks unblock <id> [--note TEXT]
         todos-cli tasks remind <id> --user <id|email>
         todos-cli tasks respond <id> [--user <id|email>] --field key=value [--field key=value] [--notes TEXT]
 
@@ -351,11 +352,12 @@ module Todos
       when "submit" then tasks_submit
       when "reopen" then tasks_reopen
       when "cancel" then tasks_cancel
-      when "decline" then tasks_decline
+      when "block" then tasks_block
+      when "unblock" then tasks_unblock
       when "remind" then tasks_remind
       when "respond" then tasks_respond
       else
-        fail_usage!("Usage: todos-cli tasks <list|get|show|check|create|update|destroy|approve|send-back|star|submit|reopen|cancel|decline|remind|respond>")
+        fail_usage!("Usage: todos-cli tasks <list|get|show|check|create|update|destroy|approve|send-back|star|submit|reopen|cancel|block|unblock|remind|respond>")
       end
     end
 
@@ -590,16 +592,27 @@ module Todos
       request(:patch, path)
     end
 
-    # The assignee will not do an open to-do someone else gave them: it is
-    # canceled with the reason, and the person who asked gets it by email.
-    # Member route only (I must be the assignee); a to-do I wrote for
-    # myself I cancel instead.
-    def tasks_decline
+    # The assignee cannot do an open to-do someone else gave them without
+    # something from that person: it goes to their court (status blocked)
+    # with what is needed, and they get it in their email batch. Member route
+    # only (I must be the assignee); a to-do I wrote for myself I cancel.
+    def tasks_block
       id = required_positional!("task id")
       options = parse_options(@args, reason: true)
       ensure_no_args!
       reason = required_option!(options[:reason].to_s.strip, "--reason")
-      request(:patch, "/tasks/#{id}/decline.json", body: { reason: reason })
+      request(:patch, "/tasks/#{id}/block.json", body: { reason: reason })
+    end
+
+    # The person who asked added what was needed: back to the assignee,
+    # open. --note (optional) says what was added; it goes on the card's
+    # notes and in the assignee's email.
+    def tasks_unblock
+      id = required_positional!("task id")
+      options = parse_options(@args, note: true)
+      ensure_no_args!
+      body = options[:note].to_s.strip.empty? ? nil : { note: options[:note].strip }
+      request(:patch, "/tasks/#{id}/unblock.json", body: body)
     end
 
     # Admin-only, like approve/destroy: re-sends TaskMailer#reminder for one

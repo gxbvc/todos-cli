@@ -85,10 +85,22 @@ class TodosCliTest < Minitest::Test
         body: { "note" => "Add-the-invoice-number" }
       },
       {
-        args: [ "tasks", "decline", "9", "--reason", "  I need Ricky's login for this.  " ],
+        args: [ "tasks", "block", "9", "--reason", "  I need Ricky's login for this.  " ],
         method: "PATCH",
-        target: "/tasks/9/decline.json",
+        target: "/tasks/9/block.json",
         body: { "reason" => "I need Ricky's login for this." }
+      },
+      {
+        args: [ "tasks", "unblock", "9", "--note", " It is in 1Password. " ],
+        method: "PATCH",
+        target: "/tasks/9/unblock.json",
+        body: { "note" => "It is in 1Password." }
+      },
+      {
+        args: %w[tasks unblock 9],
+        method: "PATCH",
+        target: "/tasks/9/unblock.json",
+        body: nil
       },
       {
         args: %w[tasks star 9],
@@ -421,11 +433,12 @@ class TodosCliTest < Minitest::Test
       [%w[tasks create -t Send-W9 --project 3 --due 2026-10-02 --due-time 3pm], /--due-time must be HH:MM/],
       [%w[tasks update 9 --user 7 --due-time 12:60], /--due-time must be HH:MM/],
       [%w[tasks create -t Send-W9 --project 3 --due 2026-10-02T15:00], /--due takes a date \(YYYY-MM-DD\); pass the time with --due-time/],
-      [%w[tasks decline 9 --reason No --due-time 15:00], /invalid option: --due-time/],
-      [%w[tasks decline 9], /--reason is required/],
-      [[ "tasks", "decline", "9", "--reason", "   " ], /--reason is required/],
-      [%w[tasks decline 9 --reason No --user 7], /invalid option: --user/],
-      [%w[tasks decline --reason No], /task id/],
+      [%w[tasks block 9 --reason No --due-time 15:00], /invalid option: --due-time/],
+      [%w[tasks block 9], /--reason is required/],
+      [[ "tasks", "block", "9", "--reason", "   " ], /--reason is required/],
+      [%w[tasks block 9 --reason No --user 7], /invalid option: --user/],
+      [%w[tasks block --reason No], /task id/],
+      [%w[tasks unblock 9 --user 7], /invalid option: --user/],
       [%w[tasks check], /--title\/-t is required/]
     ].each do |args, message|
       output, _stderr, status = run_cli(*args, server: StubServer.new)
@@ -670,6 +683,13 @@ class TodosCliTest < Minitest::Test
     output, _stderr, status = run_cli("tasks", "create", "-t", "Sign-it", "--project", "3", "--description", "@/no/such/file.md", server: StubServer.new)
     refute status.success?
     assert_match "--description file not found", output["error"]
+  end
+
+  def test_decline_is_gone
+    output, _stderr, status = run_cli("tasks", "decline", "9", "--reason", "No", server: StubServer.new)
+    refute status.success?
+    assert_equal "USAGE", output["code"]
+    assert_includes output["error"], "block|unblock"
   end
 
   def test_logbook_reads_my_logbook_and_filters_by_kind
