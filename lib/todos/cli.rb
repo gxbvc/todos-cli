@@ -30,10 +30,10 @@ module Todos
         todos-cli invites accept <id> [--area ID]
         todos-cli tasks list [--user <id|email>] [--project ID] [--status STATUS]
         todos-cli tasks get|show <id> [--user <id|email>]
-        todos-cli tasks check -t TITLE [--description HTML] [--schema JSON|@file]
-        todos-cli tasks create -t TITLE --project ID [--assignee EMAIL] [--description HTML] [--due DATE] [--due-time HH:MM] [--schema JSON|@file] [--star] [--allow-external]
-        todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description HTML] [--due DATE] [--due-time HH:MM] [--estimate N] [--source-url URL] [--schema JSON|@file] [--star]
-        todos-cli tasks update <id> --user <id|email> [--title TITLE] [--project ID] [--description HTML] [--due DATE] [--due-time HH:MM] [--estimate N] [--source-url URL] [--schema JSON|@file] [--field key=value] [--notes TEXT]
+        todos-cli tasks check -t TITLE [--description MARKDOWN|@file] [--schema JSON|@file]
+        todos-cli tasks create -t TITLE --project ID [--assignee EMAIL] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--schema JSON|@file] [--star] [--allow-external]
+        todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--estimate N] [--source-url URL] [--schema JSON|@file] [--star]
+        todos-cli tasks update <id> --user <id|email> [--title TITLE] [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--estimate N] [--source-url URL] [--schema JSON|@file] [--field key=value] [--notes TEXT]
         todos-cli tasks destroy <id> --user <id|email>
         todos-cli tasks submit <id> [--user <id|email>] [--field key=value]
         todos-cli tasks approve <id> [--user <id|email>]
@@ -53,6 +53,7 @@ module Todos
       A project is external when people outside your email domain can see it (projects list: external).
       Use an internal project unless the user names an external one; only then pass --allow-external.
       Writes in an external project print an EXTERNAL line on stderr.
+      --description is markdown (or @file.md); tasks get returns it as data.description.
       My board leaves canceled to-dos off: they are in the logbook (todos-cli logbook), and
       tasks list --status canceled reads them from there.
       --due-time HH:MM is 24-hour Central time and goes with --due. On update, --due-time "" clears the
@@ -714,7 +715,7 @@ module Todos
       parser.on("--assignee EMAIL") { |value| options[:assignee] = value } if allowed[:assignee]
       parser.on("--email EMAIL") { |value| options[:email] = value } if allowed[:email]
       parser.on("--area ID") { |value| options[:area] = value } if allowed[:area]
-      parser.on("--description HTML") { |value| options[:description] = value } if allowed[:description]
+      parser.on("--description MARKDOWN") { |value| options[:description] = description_text(value) } if allowed[:description]
       parser.on("--due DATE") { |value| options[:due] = due_date(value) } if allowed[:due]
       parser.on("--due-time HH:MM") { |value| options[:due_time] = due_time(value) } if allowed[:due_time]
       parser.on("--estimate N") { |value| options[:estimate] = positive_integer(value, "--estimate") } if allowed[:estimate]
@@ -819,6 +820,18 @@ module Todos
       else
         raise Error.new("#{name} must be true or false", code: "INVALID_ARGUMENT")
       end
+    end
+
+    # The card text in markdown (todo stores markdown). "@notes.md" reads a
+    # file, for long text. HTML still works for one release: the server
+    # converts it.
+    def description_text(value)
+      return value unless value.start_with?("@")
+
+      path = File.expand_path(value.delete_prefix("@"))
+      raise Error.new("--description file not found: #{path}", code: "INVALID_ARGUMENT") unless File.file?(path)
+
+      File.read(path)
     end
 
     def parse_schema(value)

@@ -653,6 +653,25 @@ class TodosCliTest < Minitest::Test
     { id: 9, title: "Pay the invoice", status: "canceled", kind: "canceled", project_id: 4, canceled_at: "2026-09-28T10:00:00-05:00", declined: nil }
   ] }.freeze
 
+  def test_description_is_markdown_and_can_come_from_a_file
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "card.md")
+      File.write(path, "1. Open [the sheet](https://example.com)\n2. Sign it\n")
+      server = StubServer.new(status: 201, body: JSON.generate(id: 5, description: "x"))
+      output, _stderr, status = run_cli("tasks", "create", "-t", "Sign-it", "--project", "3", "--description", "@#{path}", server: server)
+      assert status.success?, output.inspect
+      assert_equal "1. Open [the sheet](https://example.com)\n2. Sign it\n", json_body(server.requests.pop).dig("task", "description")
+    end
+
+    server = StubServer.new(status: 201, body: JSON.generate(id: 5))
+    run_cli("tasks", "create", "-t", "Sign-it", "--project", "3", "--description", "**Bold** and `code`", server: server)
+    assert_equal "**Bold** and `code`", json_body(server.requests.pop).dig("task", "description")
+
+    output, _stderr, status = run_cli("tasks", "create", "-t", "Sign-it", "--project", "3", "--description", "@/no/such/file.md", server: StubServer.new)
+    refute status.success?
+    assert_match "--description file not found", output["error"]
+  end
+
   def test_logbook_reads_my_logbook_and_filters_by_kind
     server = StubServer.new(body: JSON.generate(LOGBOOK))
     output, _stderr, status = run_cli("logbook", server: server)

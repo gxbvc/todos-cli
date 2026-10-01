@@ -173,7 +173,7 @@ from the logbook; with `--user`, the admin board still has every status.
 ```bash
 todos-cli tasks create --user andy@example.com \
   -t "Upload your signed W-9 to this card" \
-  --description "<p>IRS wants a W-9 before the first invoice. Open https://www.irs.gov/pub/irs-pdf/fw9.pdf, sign, upload here.</p>" \
+  --description "IRS wants a W-9 before the first invoice. Open https://www.irs.gov/pub/irs-pdf/fw9.pdf, sign, and upload it here." \
   --estimate 5 \
   --schema '[{"key":"w9","label":"Signed W-9","type":"file"}]'
 todos-cli tasks create --user 12 -t "Upload your signed W-9 to this card" --schema @schema.json
@@ -193,6 +193,13 @@ invited to it or its area who has not joined yet: the task waits on the invite,
 `data.assignee` is null and `data.waiting_for_invite.id` names the invite, and
 it lands on them when they accept). `--star` stars it.
 `--estimate` and `--source-url` need `--user`.
+
+Descriptions are markdown, the one format todo stores and the same field the
+web form and the chat connector use. `--description @card.md` reads it from a
+file. `tasks get` returns it as `data.description` (the card text, links
+included). `description_html` is deprecated and goes away after one release;
+until then, HTML passed to `--description` is converted to markdown by the
+server.
 
 Due dates: `--due YYYY-MM-DD` is the day. `--due-time HH:MM` adds a time, in
 24-hour Central time (America/Chicago, the app's one time zone), for example
