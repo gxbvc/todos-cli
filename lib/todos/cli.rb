@@ -55,6 +55,15 @@ module Todos
       Use an internal project unless the user names an external one; only then pass --allow-external.
       Writes in an external project print an EXTERNAL line on stderr.
       --description is markdown (or @file.md); tasks get returns it as data.description.
+      Text they must copy (a prompt, an email body, a command) goes in a ``` code block: the card
+      shows a Copy button. Under a numbered step, indent the block to line up with the step text.
+      Short values (an email address, a subject line) go in `inline code`: a tap copies it.
+      --schema is a JSON array (or @file.json) of fields, one per answer you need back:
+        [{"label":"Booking URL","type":"url","required":true}]
+      Types: text, textarea, url, password (a secret only the asker reads back), file, voice,
+      radio (pick one), checkboxes (pick any). radio and checkboxes need "options": 2 or more,
+      recommended first. Optional: "key" (made from the label), "placeholder", "required": true.
+      Leave --schema out when marking done is enough.
       My board leaves canceled to-dos off: they are in the logbook (todos-cli logbook), and
       tasks list --status canceled reads them from there.
       --due-time HH:MM is 24-hour Central time and goes with --due. On update, --due-time "" clears the
@@ -728,12 +737,13 @@ module Todos
       parser.on("--assignee EMAIL") { |value| options[:assignee] = value } if allowed[:assignee]
       parser.on("--email EMAIL") { |value| options[:email] = value } if allowed[:email]
       parser.on("--area ID") { |value| options[:area] = value } if allowed[:area]
-      parser.on("--description MARKDOWN") { |value| options[:description] = description_text(value) } if allowed[:description]
+      parser.on("--description MARKDOWN", "Card body in markdown, or @file.md. Text to copy goes in a ``` block (Copy button).") { |value| options[:description] = description_text(value) } if allowed[:description]
       parser.on("--due DATE") { |value| options[:due] = due_date(value) } if allowed[:due]
       parser.on("--due-time HH:MM") { |value| options[:due_time] = due_time(value) } if allowed[:due_time]
       parser.on("--estimate N") { |value| options[:estimate] = positive_integer(value, "--estimate") } if allowed[:estimate]
       parser.on("--source-url URL") { |value| options[:source_url] = source_url(value) } if allowed[:source_url]
-      parser.on("--schema JSON") { |value| options[:schema] = value } if allowed[:schema]
+      parser.on("--schema JSON", "Fields as a JSON array, or @file.json: [{label, type, options?, required?}]. " \
+                                  "Types: text textarea url password file voice radio checkboxes.") { |value| options[:schema] = value } if allowed[:schema]
       parser.on("--status STATUS") { |value| options[:status] = value } if allowed[:status]
       parser.on("--kind KIND") { |value| options[:kind] = value } if allowed[:kind]
       if allowed[:position]

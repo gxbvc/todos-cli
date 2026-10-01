@@ -71,6 +71,23 @@ browser, or body move. Replace `think about`, `look into`, or a bare
   helps`, `Assumption:`, `It appears that`, `You may want to`, hedging, repeated
   titles, or investigation diaries. Prefer steps to prose.
 - Never paste in the source email or ticket body.
+- Text they must copy (a prompt to paste, an email or text message to send, a
+  command) goes in a fenced code block. The card shows a Copy button, and a tap
+  on the box copies it. Never put copy text in quotes, italics, or a `>` quote.
+  Under a numbered step, indent the block so it lines up with the step text.
+  Put a short value to copy (an email address, a subject line) in
+  `inline code`. A tap copies it.
+
+  ````markdown
+  1. Open https://claude.ai and start a new chat.
+  2. Paste this:
+
+     ```
+     Write a one-page practice letter of intent. Give it to me as a Word file.
+     ```
+
+  3. Click the Word file to download it.
+  ````
 - State a blocker as cause, then action. No `Unfortunately`. No `There seems to
   be a problem`.
 - Never put a secret in prose. Ask for it with a password field.
@@ -128,10 +145,22 @@ Both are `todos-cli` flags, not description text.
 
 ### Response fields
 
-One instruction field per value you need back: text, textarea, URL, password,
-file, radio, or checkboxes. Radio for one pick from two or more short options,
-recommended first. Checkboxes when more than one can apply. No fields when
-marking done is enough.
+One instruction field per value you need back. No fields when marking done is
+enough.
+
+| Type | Use it for |
+|---|---|
+| `text` | A short answer: a name, a number, an order id. |
+| `textarea` | A longer answer: notes, a pasted reply. |
+| `url` | A link they paste back. |
+| `password` | A secret. Only the asker reads it back, on the web page. Never ask for a secret in prose. |
+| `file` | An upload. |
+| `voice` | A voice memo, for a talk or record task. |
+| `radio` | One pick from 2 or more short options, recommended first. |
+| `checkboxes` | Any number of picks, when more than one can apply. |
+
+Each field has a `label` and a `type`. `radio` and `checkboxes` need
+`options`. Set `"required": true` when Done must wait for the answer.
 
 ## Projects
 
@@ -165,7 +194,7 @@ A to-do for yourself is scored but never refused.
 | `physical_action` | yes | One act a watcher could see: send, pay, upload, call, sign, type a short answer, pick an option. |
 | `done_is_obvious` | yes | The doer knows for sure when they are finished. |
 | `strong_verb` | no | The title starts with a strong verb: Send, Pay, Reply, Confirm, Upload. |
-| `prework_done` | yes | You did the prep. For a send, the draft is in the description. For a choice, the options are listed. |
+| `prework_done` | yes | You did the prep. For a send, the draft is in the description, in a code block they can copy. For a choice, the options are listed. |
 | `self_contained` | yes | The assignee can start in 10 seconds from the card and their own accounts. |
 | `one_outcome` | yes | One sitting, one result. |
 | `human_gated` | no | Only a person can do it. |
