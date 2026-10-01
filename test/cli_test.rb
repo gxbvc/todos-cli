@@ -646,6 +646,44 @@ class TodosCliTest < Minitest::Test
     assert_equal "/projects.json", request[:target]
   end
 
+  LOGBOOK = { user: { id: 7 }, entries: [
+    { id: 5, title: "Send the deck", status: "approved", kind: "logged", project_id: 3, logged_at: "2026-09-30T09:00:00-05:00" },
+    { id: 6, title: "Upload the W-9", status: "canceled", kind: "canceled", project_id: 3, canceled_at: "2026-09-29T16:00:00-05:00",
+      declined: { by: { id: 8, name: "Sam" }, reason: "Not mine" } },
+    { id: 9, title: "Pay the invoice", status: "canceled", kind: "canceled", project_id: 4, canceled_at: "2026-09-28T10:00:00-05:00", declined: nil }
+  ] }.freeze
+
+  def test_logbook_reads_my_logbook_and_filters_by_kind
+    server = StubServer.new(body: JSON.generate(LOGBOOK))
+    output, _stderr, status = run_cli("logbook", server: server)
+    assert status.success?
+    assert_equal [ 5, 6, 9 ], output["data"].map { |entry| entry["id"] }
+    request = server.requests.pop
+    assert_equal [ "GET", "/logbook.json" ], [ request[:method], request[:target] ]
+
+    output, = run_cli("logbook", "--kind", "canceled", server: StubServer.new(body: JSON.generate(LOGBOOK)))
+    assert_equal [ 6, 9 ], output["data"].map { |entry| entry["id"] }
+    assert_equal "Not mine", output["data"][0].dig("declined", "reason")
+
+    output, _stderr, status = run_cli("logbook", "--kind", "approved", server: StubServer.new)
+    refute status.success?
+    assert_match "--kind must be logged or canceled", output["error"]
+  end
+
+  def test_tasks_list_status_canceled_reads_the_logbook_without_user
+    server = StubServer.new(body: JSON.generate(LOGBOOK))
+    output, _stderr, status = run_cli("tasks", "list", "--status", "canceled", "--project", "3", server: server)
+    assert status.success?
+    assert_equal [ 6 ], output["data"].map { |task| task["id"] }
+    assert_equal "/logbook.json", server.requests.pop[:target]
+
+    board = { user: { id: 7 }, areas: [ { id: 1, title: "Work", projects: [ { id: 3, title: "Launch", tasks: [ { id: 9, title: "Old", status: "canceled", project_id: 3 } ] } ] } ] }
+    server = StubServer.new(body: JSON.generate(board))
+    output, = run_cli("tasks", "list", "--user", "7", "--status", "canceled", server: server)
+    assert_equal [ 9 ], output["data"].map { |task| task["id"] }
+    assert_equal "/users/7.json", server.requests.pop[:target], "the admin board still has them"
+  end
+
   def test_usage_says_assignee_can_be_an_invited_person
     output, = run_cli("help", server: StubServer.new)
     assert_includes output.dig("data", "usage"), "lands on them when they accept"

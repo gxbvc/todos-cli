@@ -152,6 +152,22 @@ Task lists are read from a board and filtered locally. Valid statuses are
 visible-task route `/tasks/:id.json`; the optional `--user` does not change
 that bound route.
 
+### Logbook
+
+```bash
+todos-cli logbook
+todos-cli logbook --kind canceled
+todos-cli tasks list --status canceled
+```
+
+Your board leaves canceled to-dos off. They go to your logbook (`GET
+/logbook.json`) with the to-dos you logged, newest first. Each entry has `kind`
+(`logged` with `logged_at`, or `canceled` with `canceled_at`), `project_title`,
+`reviewer`, and `declined` (`{by, at, reason}` when the assignee declined it).
+The canceled entries are the canceled to-dos of every project on your board,
+whoever does them. `tasks list --status canceled` without `--user` reads them
+from the logbook; with `--user`, the admin board still has every status.
+
 ### Create and update tasks
 
 ```bash

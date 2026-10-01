@@ -18,6 +18,7 @@ module Todos
         todos-cli users show <id|email>
         todos-cli users remind <id|email>
         todos-cli board [--user <id|email>]
+        todos-cli logbook [--kind logged|canceled]
         todos-cli areas list --user <id|email>
         todos-cli areas create --user <id|email> -t TITLE [--position N] [--active true|false]
         todos-cli areas invite <id> --email EMAIL
@@ -52,6 +53,8 @@ module Todos
       A project is external when people outside your email domain can see it (projects list: external).
       Use an internal project unless the user names an external one; only then pass --allow-external.
       Writes in an external project print an EXTERNAL line on stderr.
+      My board leaves canceled to-dos off: they are in the logbook (todos-cli logbook), and
+      tasks list --status canceled reads them from there.
       --due-time HH:MM is 24-hour Central time and goes with --due. On update, --due-time "" clears the
       time and --due "" clears the date and the time.
     TEXT
@@ -117,6 +120,7 @@ module Todos
       when "me" then me
       when "users" then users
       when "board" then board
+      when "logbook" then logbook
       when "areas" then areas
       when "projects" then projects
       when "tasks" then tasks
@@ -360,6 +364,13 @@ module Todos
       if options[:status] && !STATUSES.include?(options[:status])
         raise Error.new("Status must be one of: #{STATUSES.join(", ")}", code: "INVALID_ARGUMENT")
       end
+      # My board leaves canceled to-dos off; they are in my logbook. The
+      # admin's --user board still has them.
+      if options[:status] == "canceled" && !options[:user]
+        tasks = logbook_entries("canceled")
+        tasks.select! { |task| task["project_id"].to_s == options[:project].to_s } if options[:project]
+        return tasks
+      end
 
       payload = board_for(options[:user])
       note_open_invites(payload)
@@ -367,6 +378,27 @@ module Todos
       tasks.select! { |task| task["project_id"].to_s == options[:project].to_s } if options[:project]
       tasks.select! { |task| task["status"] == options[:status] } if options[:status]
       tasks
+    end
+
+    # What left my board, newest first (GET /logbook.json): to-dos I logged
+    # (kind logged, logged_at) and canceled to-dos of my board's projects
+    # (kind canceled, canceled_at, declined with the reason).
+    def logbook
+      options = parse_options(@args, kind: true)
+      ensure_no_args!
+      if options[:kind] && !%w[logged canceled].include?(options[:kind])
+        raise Error.new("--kind must be logged or canceled", code: "INVALID_ARGUMENT")
+      end
+
+      logbook_entries(options[:kind])
+    end
+
+    def logbook_entries(kind = nil)
+      payload = request(:get, "/logbook.json")
+      entries = payload.is_a?(Hash) ? payload["entries"] : nil
+      raise Error.new("Logbook response did not include entries", code: "INVALID_RESPONSE") unless entries.is_a?(Array)
+
+      kind ? entries.select { |entry| entry["kind"] == kind } : entries
     end
 
     def tasks_get
@@ -689,6 +721,7 @@ module Todos
       parser.on("--source-url URL") { |value| options[:source_url] = source_url(value) } if allowed[:source_url]
       parser.on("--schema JSON") { |value| options[:schema] = value } if allowed[:schema]
       parser.on("--status STATUS") { |value| options[:status] = value } if allowed[:status]
+      parser.on("--kind KIND") { |value| options[:kind] = value } if allowed[:kind]
       if allowed[:position]
         parser.on("--position N") { |value| options[:position] = Integer(value) }
       end
