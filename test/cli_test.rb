@@ -402,9 +402,9 @@ class TodosCliTest < Minitest::Test
     assert_equal true, output["ok"]
     assert_equal 40, output.dig("data", "quality", "score")
     assert_match(/^Quality 40 \(weakest: prework_done\), failed$/, stderr)
-    assert_match(/^  pass  physical_action: 88$/, stderr)
-    assert_match(/^  FAIL  prework_done: 40\. Do the prep first\. For a send, put the draft in the description\.$/, stderr)
-    assert_match(/^  FAIL  strong_verb \(does not block\): 40\. Start with Send/, stderr)
+    assert_match(/^  pass  One physical next step: 88$/, stderr)
+    assert_match(/^  FAIL  Prep work is done: 40\. Do the prep first\. For a send, put the draft in the description\.$/, stderr)
+    assert_match(/^  FAIL  Starts with a strong verb \(does not block\): 40\. Start with Send/, stderr)
     refute_match(/GTD warn/, stderr)
   end
 
@@ -421,7 +421,7 @@ class TodosCliTest < Minitest::Test
     assert_equal "Fix these checks before you assign it: Prep work is done", output["error"]
     assert_equal false, output.dig("quality", "passed")
     assert_equal "prework_done", output.dig("quality", "weakest")
-    assert_match(/^  FAIL  prework_done: 40\. Do the prep first/, stderr)
+    assert_match(/^  FAIL  Prep work is done: 40\. Do the prep first/, stderr)
   end
 
   def test_get_and_show_print_the_quality_checks
@@ -451,7 +451,7 @@ class TodosCliTest < Minitest::Test
 
     assert status.success?
     assert_equal false, output.dig("data", "quality", "passed")
-    assert_match(/FAIL  prework_done/, stderr)
+    assert_match(/FAIL  Prep work is done/, stderr)
   end
 
   def test_the_local_gtd_warning_and_force_flag_are_gone

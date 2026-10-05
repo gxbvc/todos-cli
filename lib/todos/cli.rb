@@ -117,11 +117,13 @@ module Todos
       end
 
       verdict = quality["passed"] ? "passed" : "failed"
-      err.puts("Quality #{quality["score"]} (weakest: #{quality["weakest"]}), #{verdict}")
+      weakest = quality["weakest_label"] || quality["weakest"]
+      err.puts("Quality #{quality["score"]} (weakest: #{weakest}), #{verdict}")
       Array(quality["checks"]).each do |check|
         mark = check["passed"] ? "pass" : "FAIL"
         blocks = check["blocking"] ? "" : " (does not block)"
-        line = "  #{mark}  #{check["id"]}#{blocks}: #{check["score"]}"
+        # The check's one name (label), as on the card; the id is for code.
+        line = "  #{mark}  #{check["label"] || check["id"]}#{blocks}: #{check["score"]}"
         line += ". #{check["hint"]}" unless check["passed"]
         err.puts(line)
       end
