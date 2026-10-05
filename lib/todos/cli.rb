@@ -31,9 +31,9 @@ module Todos
         todos-cli tasks list [--user <id|email>] [--project ID] [--status STATUS]
         todos-cli tasks get|show <id> [--user <id|email>]
         todos-cli tasks check -t TITLE [--description MARKDOWN|@file] [--schema JSON|@file]
-        todos-cli tasks create -t TITLE --project ID [--assignee EMAIL] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--schema JSON|@file] [--star] [--allow-external]
-        todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--estimate N] [--source-url URL] [--schema JSON|@file] [--star]
-        todos-cli tasks update <id> --user <id|email> [--title TITLE] [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--estimate N] [--source-url URL] [--schema JSON|@file] [--field key=value] [--notes TEXT]
+        todos-cli tasks create -t TITLE --project ID [--assignee EMAIL] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--schema JSON|@file] [--star] [--allow-external]
+        todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--source-url URL] [--schema JSON|@file] [--star]
+        todos-cli tasks update <id> [--user <id|email>] [--title TITLE] [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--source-url URL] [--schema JSON|@file] [--field key=value] [--notes TEXT]
         todos-cli tasks destroy <id> --user <id|email>
         todos-cli tasks submit <id> [--user <id|email>] [--field key=value]
         todos-cli tasks approve <id> [--user <id|email>]
@@ -68,6 +68,10 @@ module Todos
       tasks list --status canceled reads them from there.
       --due-time HH:MM is 24-hour Central time and goes with --due. On update, --due-time "" clears the
       time and --due "" clears the date and the time.
+      --priority is urgent, high, normal (the default), or low. Each person can hold 3 open Urgent
+      to-dos from one asker; past that, --priority-reason TEXT is required and goes in the history.
+      --star (and tasks star) pins the to-do for you only: pins do not reorder anyone's list.
+      tasks update without --user is the asker's edit (PATCH /tasks/:id); with --user, the admin's.
     TEXT
 
     def self.run(args, client: Client.new, out: $stdout, err: $stderr)
@@ -445,7 +449,7 @@ module Todos
       options = parse_options(
         @args,
         user: true, title: true, project: true, assignee: true, description: true, due: true, due_time: true, estimate: true,
-        source_url: true, schema: true, star: true, allow_external: true
+        source_url: true, schema: true, star: true, allow_external: true, priority: true, priority_reason: true
       )
       ensure_no_args!
       title = required_option!(options[:title], "--title/-t")
@@ -459,6 +463,9 @@ module Todos
       end
       task[:fields_schema] = parse_schema(options[:schema]) if options.key?(:schema)
       task[:starred] = true if options[:star]
+      task[:priority] = options[:priority] if options.key?(:priority)
+      task[:priority_reason] = options[:priority_reason] if options.key?(:priority_reason)
+      task[:estimated_minutes] = options[:estimate] if options.key?(:estimate)
 
       if options[:user]
         if options.key?(:assignee)
@@ -467,13 +474,12 @@ module Todos
         if options[:allow_external]
           raise Error.new("--allow-external is for the member route; the admin route (--user) is not checked", code: "INVALID_ARGUMENT")
         end
-        task[:estimated_minutes] = options[:estimate] if options.key?(:estimate)
         task[:source_url] = options[:source_url] if options.key?(:source_url)
         return note_external(with_quality(request(:post, "/users/#{resolve_user(options[:user])}/tasks.json", body: { task: task })))
       end
 
-      if options.key?(:estimate) || options.key?(:source_url)
-        raise Error.new("--estimate and --source-url need --user (admin create)", code: "INVALID_ARGUMENT")
+      if options.key?(:source_url)
+        raise Error.new("--source-url needs --user (admin create)", code: "INVALID_ARGUMENT")
       end
       # A forgotten --user must fail, not land a client's to-do on my board.
       unless options.key?(:project)
@@ -494,10 +500,9 @@ module Todos
       options = parse_options(
         @args,
         user: true, title: true, project: true, description: true, due: true, due_time: true,
-        estimate: true, source_url: true, schema: true, fields: true, notes: true
+        estimate: true, source_url: true, schema: true, fields: true, notes: true, priority: true, priority_reason: true
       )
       ensure_no_args!
-      user_id = require_user!(options[:user])
 
       task = {}
       task[:title] = options[:title] if options.key?(:title)
@@ -508,6 +513,8 @@ module Todos
       task[:estimated_minutes] = options[:estimate] if options.key?(:estimate)
       task[:source_url] = options[:source_url] if options.key?(:source_url)
       task[:fields_schema] = parse_schema(options[:schema]) if options.key?(:schema)
+      task[:priority] = options[:priority] if options.key?(:priority)
+      task[:priority_reason] = options[:priority_reason] if options.key?(:priority_reason)
 
       body = {}
       body[:task] = task unless task.empty?
@@ -515,7 +522,15 @@ module Todos
       body[:notes] = options[:notes] if options.key?(:notes)
       raise Error.new("Nothing to update", code: "INVALID_ARGUMENT") if body.empty?
 
-      note_external(request(:patch, "/users/#{user_id}/tasks/#{id}.json", body: body))
+      # Without --user: the asker's own edit on the member route.
+      unless options[:user]
+        if options.key?(:source_url)
+          raise Error.new("--source-url needs --user (admin edit)", code: "INVALID_ARGUMENT")
+        end
+        return note_external(request(:patch, "/tasks/#{id}.json", body: body))
+      end
+
+      note_external(request(:patch, "/users/#{resolve_user(options[:user])}/tasks/#{id}.json", body: body))
     end
 
     def tasks_destroy
@@ -546,8 +561,8 @@ module Todos
       request(:patch, "/tasks/#{id}/send_back.json", body: { note: note })
     end
 
-    # Star (or --off to unstar): the assignee or the reviewer; the admin with
-    # --user.
+    # Pin (or --off to unpin) for me only (the server's old star route): any
+    # member of the to-do's project; the admin with --user.
     def tasks_star
       id = required_positional!("task id")
       options = parse_options(@args, user: true, off: true)
@@ -741,6 +756,8 @@ module Todos
       parser.on("--due DATE") { |value| options[:due] = due_date(value) } if allowed[:due]
       parser.on("--due-time HH:MM") { |value| options[:due_time] = due_time(value) } if allowed[:due_time]
       parser.on("--estimate N") { |value| options[:estimate] = positive_integer(value, "--estimate") } if allowed[:estimate]
+      parser.on("--priority LEVEL", "urgent, high, normal, or low") { |value| options[:priority] = priority(value) } if allowed[:priority]
+      parser.on("--priority-reason TEXT", "Why one more Urgent (needed past 3 open Urgent from one asker)") { |value| options[:priority_reason] = value } if allowed[:priority_reason]
       parser.on("--source-url URL") { |value| options[:source_url] = source_url(value) } if allowed[:source_url]
       parser.on("--schema JSON", "Fields as a JSON array, or @file.json: [{label, type, options?, required?}]. " \
                                   "Types: text textarea url password file voice radio checkboxes.") { |value| options[:schema] = value } if allowed[:schema]
@@ -799,6 +816,15 @@ module Todos
 
     # "15:00" (24-hour, Central time on the server), "9:05" becomes "09:05",
     # and "" clears the time on update.
+    PRIORITIES = %w[urgent high normal low].freeze
+
+    def priority(value)
+      level = value.to_s.strip.downcase
+      return level if PRIORITIES.include?(level)
+
+      raise Error.new("--priority must be urgent, high, normal, or low", code: "INVALID_ARGUMENT")
+    end
+
     def due_time(value)
       value = value.strip
       return "" if value.empty?

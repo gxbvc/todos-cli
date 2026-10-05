@@ -61,6 +61,24 @@ class TodosCliTest < Minitest::Test
         body: { "task" => { "due_date" => "" } }
       },
       {
+        args: %w[tasks create -t Send-W9 --project 3 --priority URGENT --priority-reason Penalty --estimate 10],
+        method: "POST",
+        target: "/tasks.json",
+        body: { "task" => { "title" => "Send-W9", "project_id" => "3", "priority" => "urgent", "priority_reason" => "Penalty", "estimated_minutes" => 10 } }
+      },
+      {
+        args: %w[tasks update 9 --priority high],
+        method: "PATCH",
+        target: "/tasks/9.json",
+        body: { "task" => { "priority" => "high" } }
+      },
+      {
+        args: %w[tasks update 9 --user 7 --priority low],
+        method: "PATCH",
+        target: "/users/7/tasks/9.json",
+        body: { "task" => { "priority" => "low" } }
+      },
+      {
         args: %w[tasks create --user 7 -t Send-W9 --star],
         method: "POST",
         target: "/users/7/tasks.json",
@@ -422,8 +440,9 @@ class TodosCliTest < Minitest::Test
 
   def test_member_and_admin_create_flags_do_not_mix
     [
-      [%w[tasks create -t Send-W9 --estimate 5], /--estimate and --source-url need --user/],
-      [%w[tasks create -t Send-W9 --source-url https://x.com/1], /--estimate and --source-url need --user/],
+      [%w[tasks create -t Send-W9 --project 3 --source-url https://x.com/1], /--source-url needs --user/],
+      [%w[tasks update 9 --source-url https://x.com/1], /--source-url needs --user/],
+      [%w[tasks create -t Send-W9 --project 3 --priority critical], /--priority must be urgent, high, normal, or low/],
       [%w[tasks create --user 7 -t Send-W9 --assignee sam@example.com], /--assignee is for the member route/],
       [%w[tasks create -t Send-W9], /Pass --user EMAIL for someone's board, or --project ID/],
       [%w[tasks create -t Send-W9 --assignee sam@example.com], /Pass --user EMAIL for someone's board, or --project ID/],
