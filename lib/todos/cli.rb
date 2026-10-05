@@ -40,8 +40,8 @@ module Todos
         todos-cli tasks send-back <id> --note TEXT
         todos-cli tasks star <id> [--off] [--user <id|email>]
         todos-cli tasks plan <id> [--do-on DATE|""] [--no-deadline]
-        todos-cli tasks reopen <id> [--user <id|email>] [--note TEXT]
-        todos-cli tasks cancel <id> [--user <id|email>]
+        todos-cli tasks reopen <id> [--user <id|email>] [--note TEXT] [--reason TEXT]
+        todos-cli tasks cancel <id> [--user <id|email>] [--reason TEXT]
         todos-cli tasks block <id> --reason TEXT
         todos-cli tasks unblock <id> [--note TEXT]
         todos-cli tasks remind <id> --user <id|email>
@@ -73,6 +73,8 @@ module Todos
       --do-on DATE is the day to work on it: it shows in Today that day, and the deadline stays.
       --no-deadline says there is no deadline on purpose. tasks plan is the doer's own: --do-on and
       --no-deadline (only while the asker set no deadline).
+      tasks cancel and tasks reopen take --reason TEXT: one line on why, shown in the history. Give it
+      whenever someone else is on the to-do (the web asks for it; the API will require it).
       --priority is urgent, high, normal (the default), or low. Each person can hold 3 open Urgent
       to-dos from one asker; past that, --priority-reason TEXT is required and goes in the history.
       --star (and tasks star) pins the to-do for you only: pins do not reorder anyone's list.
@@ -624,29 +626,33 @@ module Todos
 
     def tasks_reopen
       id = required_positional!("task id")
-      options = parse_options(@args, user: true, note: true)
+      options = parse_options(@args, user: true, note: true, reason: true)
       ensure_no_args!
+      reason = options[:reason].to_s.strip
       if options[:user]
-        body = options.key?(:note) ? { note: options[:note] } : nil
-        request(:patch, "/users/#{resolve_user(options[:user])}/tasks/#{id}/reopen.json", body: body)
+        body = {}
+        body[:note] = options[:note] if options.key?(:note)
+        body[:reason] = reason unless reason.empty?
+        request(:patch, "/users/#{resolve_user(options[:user])}/tasks/#{id}/reopen.json", body: body.empty? ? nil : body)
       else
         if options.key?(:note)
           raise Error.new("--note requires --user because self reopen is silent", code: "INVALID_ARGUMENT")
         end
-        request(:patch, "/tasks/#{id}/reopen.json")
+        request(:patch, "/tasks/#{id}/reopen.json", body: reason.empty? ? nil : { reason: reason })
       end
     end
 
     def tasks_cancel
       id = required_positional!("task id")
-      options = parse_options(@args, user: true)
+      options = parse_options(@args, user: true, reason: true)
       ensure_no_args!
       path = if options[:user]
                "/users/#{resolve_user(options[:user])}/tasks/#{id}/cancel.json"
              else
                "/tasks/#{id}/cancel.json"
              end
-      request(:patch, path)
+      reason = options[:reason].to_s.strip
+      request(:patch, path, body: reason.empty? ? nil : { reason: reason })
     end
 
     # The assignee cannot do an open to-do someone else gave them without

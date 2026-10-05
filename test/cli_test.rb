@@ -80,6 +80,18 @@ class TodosCliTest < Minitest::Test
         body: { "task" => { "no_deadline" => true } }
       },
       {
+        args: [ "tasks", "cancel", "9", "--reason", "The client dropped it" ],
+        method: "PATCH",
+        target: "/tasks/9/cancel.json",
+        body: { "reason" => "The client dropped it" }
+      },
+      {
+        args: [ "tasks", "reopen", "9", "--reason", "Numbers changed" ],
+        method: "PATCH",
+        target: "/tasks/9/reopen.json",
+        body: { "reason" => "Numbers changed" }
+      },
+      {
         args: %w[tasks plan 9 --do-on 2026-10-06],
         method: "PATCH",
         target: "/tasks/9/plan.json",
