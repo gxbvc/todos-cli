@@ -31,14 +31,15 @@ module Todos
         todos-cli tasks list [--user <id|email>] [--project ID] [--status STATUS]
         todos-cli tasks get|show <id> [--user <id|email>]
         todos-cli tasks check -t TITLE [--description MARKDOWN|@file] [--schema JSON|@file]
-        todos-cli tasks create -t TITLE --project ID [--assignee EMAIL] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--schema JSON|@file] [--star] [--allow-external]
-        todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--source-url URL] [--schema JSON|@file] [--star]
-        todos-cli tasks update <id> [--user <id|email>] [--title TITLE] [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--source-url URL] [--schema JSON|@file] [--field key=value] [--notes TEXT]
+        todos-cli tasks create -t TITLE --project ID [--assignee EMAIL] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--schema JSON|@file] [--star] [--allow-external]
+        todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--source-url URL] [--schema JSON|@file] [--star]
+        todos-cli tasks update <id> [--user <id|email>] [--title TITLE] [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--source-url URL] [--schema JSON|@file] [--field key=value] [--notes TEXT]
         todos-cli tasks destroy <id> --user <id|email>
         todos-cli tasks submit <id> [--user <id|email>] [--field key=value]
         todos-cli tasks approve <id> [--user <id|email>]
         todos-cli tasks send-back <id> --note TEXT
         todos-cli tasks star <id> [--off] [--user <id|email>]
+        todos-cli tasks plan <id> [--do-on DATE|""] [--no-deadline]
         todos-cli tasks reopen <id> [--user <id|email>] [--note TEXT]
         todos-cli tasks cancel <id> [--user <id|email>]
         todos-cli tasks block <id> --reason TEXT
@@ -68,6 +69,10 @@ module Todos
       tasks list --status canceled reads them from there.
       --due-time HH:MM is 24-hour Central time and goes with --due. On update, --due-time "" clears the
       time and --due "" clears the date and the time.
+      --zone is the zone of --due-time (an IANA name like America/New_York; Central when left out).
+      --do-on DATE is the day to work on it: it shows in Today that day, and the deadline stays.
+      --no-deadline says there is no deadline on purpose. tasks plan is the doer's own: --do-on and
+      --no-deadline (only while the asker set no deadline).
       --priority is urgent, high, normal (the default), or low. Each person can hold 3 open Urgent
       to-dos from one asker; past that, --priority-reason TEXT is required and goes in the history.
       --star (and tasks star) pins the to-do for you only: pins do not reorder anyone's list.
@@ -362,6 +367,7 @@ module Todos
       when "approve" then tasks_approve
       when "send-back" then tasks_send_back
       when "star" then tasks_star
+      when "plan" then tasks_plan
       when "submit" then tasks_submit
       when "reopen" then tasks_reopen
       when "cancel" then tasks_cancel
@@ -370,7 +376,7 @@ module Todos
       when "remind" then tasks_remind
       when "respond" then tasks_respond
       else
-        fail_usage!("Usage: todos-cli tasks <list|get|show|check|create|update|destroy|approve|send-back|star|submit|reopen|cancel|block|unblock|remind|respond>")
+        fail_usage!("Usage: todos-cli tasks <list|get|show|check|create|update|destroy|approve|send-back|star|plan|submit|reopen|cancel|block|unblock|remind|respond>")
       end
     end
 
@@ -449,7 +455,8 @@ module Todos
       options = parse_options(
         @args,
         user: true, title: true, project: true, assignee: true, description: true, due: true, due_time: true, estimate: true,
-        source_url: true, schema: true, star: true, allow_external: true, priority: true, priority_reason: true
+        source_url: true, schema: true, star: true, allow_external: true, priority: true, priority_reason: true,
+        zone: true, do_on: true, no_deadline: true
       )
       ensure_no_args!
       title = required_option!(options[:title], "--title/-t")
@@ -466,6 +473,7 @@ module Todos
       task[:priority] = options[:priority] if options.key?(:priority)
       task[:priority_reason] = options[:priority_reason] if options.key?(:priority_reason)
       task[:estimated_minutes] = options[:estimate] if options.key?(:estimate)
+      add_plan_fields!(task, options)
 
       if options[:user]
         if options.key?(:assignee)
@@ -500,7 +508,8 @@ module Todos
       options = parse_options(
         @args,
         user: true, title: true, project: true, description: true, due: true, due_time: true,
-        estimate: true, source_url: true, schema: true, fields: true, notes: true, priority: true, priority_reason: true
+        estimate: true, source_url: true, schema: true, fields: true, notes: true, priority: true, priority_reason: true,
+        zone: true, do_on: true, no_deadline: true
       )
       ensure_no_args!
 
@@ -515,6 +524,7 @@ module Todos
       task[:fields_schema] = parse_schema(options[:schema]) if options.key?(:schema)
       task[:priority] = options[:priority] if options.key?(:priority)
       task[:priority_reason] = options[:priority_reason] if options.key?(:priority_reason)
+      add_plan_fields!(task, options)
 
       body = {}
       body[:task] = task unless task.empty?
@@ -571,6 +581,27 @@ module Todos
       return request(:patch, "/tasks/#{id}/star.json", body: body) unless options[:user]
 
       request(:patch, "/users/#{resolve_user(options[:user])}/tasks/#{id}/star.json", body: body)
+    end
+
+    # The doer plans it: --do-on DATE ("" clears) puts it in Today that day
+    # without changing the deadline; --no-deadline says there is none (only
+    # while the asker set none). Member route.
+    def tasks_plan
+      id = required_positional!("task id")
+      options = parse_options(@args, do_on: true, no_deadline: true)
+      ensure_no_args!
+      body = {}
+      body[:do_on] = options[:do_on] if options.key?(:do_on)
+      body[:no_deadline] = true if options[:no_deadline]
+      raise Error.new("Pass --do-on DATE or --no-deadline", code: "INVALID_ARGUMENT") if body.empty?
+
+      request(:patch, "/tasks/#{id}/plan.json", body: body)
+    end
+
+    def add_plan_fields!(task, options)
+      task[:due_zone] = options[:zone] if options.key?(:zone)
+      task[:do_on] = options[:do_on] if options.key?(:do_on)
+      task[:no_deadline] = true if options[:no_deadline]
     end
 
     def tasks_submit
@@ -756,6 +787,9 @@ module Todos
       parser.on("--due DATE") { |value| options[:due] = due_date(value) } if allowed[:due]
       parser.on("--due-time HH:MM") { |value| options[:due_time] = due_time(value) } if allowed[:due_time]
       parser.on("--estimate N") { |value| options[:estimate] = positive_integer(value, "--estimate") } if allowed[:estimate]
+      parser.on("--zone ZONE", "Time zone of --due-time, like America/New_York") { |value| options[:zone] = value.strip } if allowed[:zone]
+      parser.on("--do-on DATE", "Day to work on it (YYYY-MM-DD), or "" to clear") { |value| options[:do_on] = plan_date(value, "--do-on") } if allowed[:do_on]
+      parser.on("--no-deadline", "There is no deadline on purpose") { options[:no_deadline] = true } if allowed[:no_deadline]
       parser.on("--priority LEVEL", "urgent, high, normal, or low") { |value| options[:priority] = priority(value) } if allowed[:priority]
       parser.on("--priority-reason TEXT", "Why one more Urgent (needed past 3 open Urgent from one asker)") { |value| options[:priority_reason] = value } if allowed[:priority_reason]
       parser.on("--source-url URL") { |value| options[:source_url] = source_url(value) } if allowed[:source_url]
@@ -814,8 +848,6 @@ module Todos
       value
     end
 
-    # "15:00" (24-hour, Central time on the server), "9:05" becomes "09:05",
-    # and "" clears the time on update.
     PRIORITIES = %w[urgent high normal low].freeze
 
     def priority(value)
@@ -825,6 +857,16 @@ module Todos
       raise Error.new("--priority must be urgent, high, normal, or low", code: "INVALID_ARGUMENT")
     end
 
+    # A day (YYYY-MM-DD) for --do-on, or "" to clear it.
+    def plan_date(value, flag)
+      value = value.strip
+      return value if value.empty? || value.match?(/\A\d{4}-\d{2}-\d{2}\z/)
+
+      raise Error.new("#{flag} takes a date (YYYY-MM-DD), or "" to clear it", code: "INVALID_ARGUMENT")
+    end
+
+    # "15:00" (24-hour, Central time on the server, or the --zone), "9:05"
+    # becomes "09:05", and "" clears the time on update.
     def due_time(value)
       value = value.strip
       return "" if value.empty?

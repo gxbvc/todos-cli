@@ -67,6 +67,31 @@ class TodosCliTest < Minitest::Test
         body: { "task" => { "title" => "Send-W9", "project_id" => "3", "priority" => "urgent", "priority_reason" => "Penalty", "estimated_minutes" => 10 } }
       },
       {
+        args: %w[tasks create -t Call-bank --project 3 --due 2026-10-09 --due-time 10:00 --zone America/New_York --do-on 2026-10-07],
+        method: "POST",
+        target: "/tasks.json",
+        body: { "task" => { "title" => "Call-bank", "project_id" => "3", "due_date" => "2026-10-09", "due_time" => "10:00",
+                              "due_zone" => "America/New_York", "do_on" => "2026-10-07" } }
+      },
+      {
+        args: %w[tasks update 9 --no-deadline],
+        method: "PATCH",
+        target: "/tasks/9.json",
+        body: { "task" => { "no_deadline" => true } }
+      },
+      {
+        args: %w[tasks plan 9 --do-on 2026-10-06],
+        method: "PATCH",
+        target: "/tasks/9/plan.json",
+        body: { "do_on" => "2026-10-06" }
+      },
+      {
+        args: [ "tasks", "plan", "9", "--do-on", "", "--no-deadline" ],
+        method: "PATCH",
+        target: "/tasks/9/plan.json",
+        body: { "do_on" => "", "no_deadline" => true }
+      },
+      {
         args: %w[tasks update 9 --priority high],
         method: "PATCH",
         target: "/tasks/9.json",
@@ -443,6 +468,8 @@ class TodosCliTest < Minitest::Test
       [%w[tasks create -t Send-W9 --project 3 --source-url https://x.com/1], /--source-url needs --user/],
       [%w[tasks update 9 --source-url https://x.com/1], /--source-url needs --user/],
       [%w[tasks create -t Send-W9 --project 3 --priority critical], /--priority must be urgent, high, normal, or low/],
+      [%w[tasks plan 9], /Pass --do-on DATE or --no-deadline/],
+      [%w[tasks plan 9 --do-on tomorrow], /--do-on takes a date/],
       [%w[tasks create --user 7 -t Send-W9 --assignee sam@example.com], /--assignee is for the member route/],
       [%w[tasks create -t Send-W9], /Pass --user EMAIL for someone's board, or --project ID/],
       [%w[tasks create -t Send-W9 --assignee sam@example.com], /Pass --user EMAIL for someone's board, or --project ID/],
