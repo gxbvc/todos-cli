@@ -49,6 +49,13 @@ module Todos
         todos-cli tasks respond <id> [--user <id|email>] --field key=value [--field key=value]
         todos-cli tasks comment <id> "TEXT"|@file.md
         todos-cli tasks comments <id>
+        todos-cli webhooks list
+        todos-cli webhooks create --url URL [--events TYPE,TYPE|*] [--description TEXT]
+        todos-cli webhooks update <id> [--url URL] [--events TYPE,TYPE|*] [--description TEXT] [--active true|false]
+        todos-cli webhooks delete <id>
+        todos-cli webhooks rotate <id>
+        todos-cli webhooks test <id>
+        todos-cli webhooks deliveries <id>
 
       Every task must be a next physical action.
       Rules and examples: write-human-todos skill.
@@ -86,6 +93,13 @@ module Todos
       person doing it, the person who asked, and the reviewer can comment in any status, and a comment
       never changes the status. tasks comments <id> lists the thread; tasks get prints it on stderr.
       --notes on tasks update and tasks respond still works for one release: it posts a comment.
+      Webhooks: todo.gxb.vc POSTs a signed event to your https URL when a to-do you can open changes.
+      --events: task.created task.updated task.submitted task.approved task.reopened task.canceled
+      task.blocked task.unblocked task.logged comment.created comment.deleted, or * (all, the default).
+      create and rotate print the secret once (data.secret): keep it. Check each request:
+      X-Todo-Signature t=<unix>,v1=<hex HMAC-SHA256(secret, "<t>.<raw body>")>; refuse t older than
+      5 minutes. The payload is thin (id, title, status, link): read the rest with tasks get.
+      update --active true turns on a webhook that was disabled after 50 failed deliveries.
     TEXT
 
     def self.run(args, client: Client.new, out: $stdout, err: $stderr)
@@ -156,6 +170,7 @@ module Todos
       when "projects" then projects
       when "tasks" then tasks
       when "invites" then invites
+      when "webhooks" then webhooks
       when "help", "-h", "--help", nil then { usage: USAGE }
       else
         fail_usage!("Unknown command: #{command}")
@@ -364,6 +379,66 @@ module Todos
 
       noun = count == 1 ? "invite" : "invites"
       @err.puts("You have #{count} open #{noun}. Run: todos-cli invites list")
+    end
+
+    # My webhooks (todo plan 25). Only mine: anyone else's id is HTTP_404.
+    def webhooks
+      subcommand = @args.shift
+      case subcommand
+      when "list"
+        ensure_no_args!
+        request(:get, "/webhooks.json")["webhooks"]
+      when "create" then webhooks_create
+      when "update" then webhooks_update
+      when "delete" then webhook_member(:delete, "")
+      when "rotate" then webhook_member(:post, "/rotate")
+      when "test" then webhook_member(:post, "/test")
+      when "deliveries" then webhook_member(:get, "/deliveries")
+      else
+        fail_usage!("Usage: todos-cli webhooks <list|create|update|delete|rotate|test|deliveries>")
+      end
+    end
+
+    # data.secret is shown here and on rotate only, so say so on stderr.
+    def webhooks_create
+      options = parse_options(@args, url: true, events: true, description: true)
+      ensure_no_args!
+      body = { url: required_option!(options[:url], "--url") }
+      body[:events] = options[:events] if options.key?(:events)
+      body[:description] = options[:description] if options.key?(:description)
+      note_secret(request(:post, "/webhooks.json", body: body))
+    end
+
+    def webhooks_update
+      id = required_positional!("webhook id")
+      options = parse_options(@args, url: true, events: true, description: true, active: true)
+      ensure_no_args!
+      body = options.slice(:url, :events, :description, :active)
+      raise Error.new("Pass --url, --events, --description, or --active", code: "INVALID_ARGUMENT") if body.empty?
+
+      request(:patch, "/webhooks/#{id}.json", body: body)
+    end
+
+    # delete (data null), rotate (a new secret), test (a ping, queued now),
+    # deliveries (the last 50).
+    def webhook_member(method, action)
+      id = required_positional!("webhook id")
+      ensure_no_args!
+      result = request(method, "/webhooks/#{id}#{action}.json")
+      action == "/rotate" ? note_secret(result) : result
+    end
+
+    def note_secret(result)
+      @err.puts("Copy data.secret now: it is not shown again.") if result.is_a?(Hash) && result["secret"]
+      result
+    end
+
+    # A comma list of event types, or * for all.
+    def event_types(value)
+      types = value.to_s.split(",").map(&:strip).reject(&:empty?)
+      raise ArgumentError, "--events needs at least one type, or *" if types.empty?
+
+      types
     end
 
     def tasks
@@ -842,6 +917,8 @@ module Todos
       parser.on("--assignee EMAIL") { |value| options[:assignee] = value } if allowed[:assignee]
       parser.on("--email EMAIL") { |value| options[:email] = value } if allowed[:email]
       parser.on("--area ID") { |value| options[:area] = value } if allowed[:area]
+      parser.on("--url URL", "The https URL a webhook posts to") { |value| options[:url] = value.strip } if allowed[:url]
+      parser.on("--events TYPES", "Comma list of event types, or *") { |value| options[:events] = event_types(value) } if allowed[:events]
       parser.on("--description MARKDOWN", "Card body in markdown, or @file.md. Text to copy goes in a ``` block (Copy button).") { |value| options[:description] = description_text(value) } if allowed[:description]
       parser.on("--due DATE") { |value| options[:due] = due_date(value) } if allowed[:due]
       parser.on("--due-time HH:MM") { |value| options[:due_time] = due_time(value) } if allowed[:due_time]

@@ -1052,4 +1052,71 @@ end
     }], output["data"]
     assert_equal "/users/7.json", server.requests.pop[:target]
   end
+
+  def test_webhooks_commands_call_the_owner_routes
+    hook = { id: 4, url: "https://hooks.example.com/todo", events: ["task.submitted"], state: "active" }
+    cases = [
+      [%w[webhooks list], "GET", "/webhooks.json", nil, { webhooks: [hook] }],
+      [["webhooks", "create", "--url", "https://hooks.example.com/todo", "--events", "task.submitted, task.approved", "--description", "Pios"],
+       "POST", "/webhooks.json",
+       { "url" => "https://hooks.example.com/todo", "events" => %w[task.submitted task.approved], "description" => "Pios" },
+       hook.merge(secret: "whsec_abc")],
+      [%w[webhooks update 4 --events * --active true], "PATCH", "/webhooks/4.json", { "events" => ["*"], "active" => true }, hook],
+      [%w[webhooks rotate 4], "POST", "/webhooks/4/rotate.json", nil, hook.merge(secret: "whsec_new")],
+      [%w[webhooks test 4], "POST", "/webhooks/4/test.json", nil, { delivery: { id: 1, event_type: "ping" } }],
+      [%w[webhooks deliveries 4], "GET", "/webhooks/4/deliveries.json", nil, { webhook: hook, deliveries: [] }]
+    ]
+
+    cases.each do |args, method, target, body, reply|
+      server = StubServer.new(body: JSON.generate(reply))
+      output, stderr = run_cli(*args, server: server)
+      request = server.requests.pop
+
+      assert_equal true, output["ok"], args.join(" ")
+      assert_equal [method, target], [request[:method], request[:target]], args.join(" ")
+      body.nil? ? assert_nil(json_body(request), args.join(" ")) : assert_equal(body, json_body(request), args.join(" "))
+      if reply[:secret]
+        assert_match(/not shown again/, stderr, args.join(" "))
+      else
+        refute_match(/not shown again/, stderr, args.join(" "))
+      end
+    end
+  end
+
+  def test_webhooks_list_returns_the_rows_and_delete_is_204
+    server = StubServer.new(body: JSON.generate(webhooks: [{ id: 4 }]))
+    output, = run_cli("webhooks", "list", server: server)
+    assert_equal [{ "id" => 4 }], output["data"]
+
+    server = StubServer.new(status: 204, body: "")
+    output, = run_cli("webhooks", "delete", "4", server: server)
+    request = server.requests.pop
+    assert_equal true, output["ok"]
+    assert_nil output["data"]
+    assert_equal ["DELETE", "/webhooks/4.json"], [request[:method], request[:target]]
+  end
+
+  def test_webhooks_create_needs_a_url_and_reports_the_servers_errors
+    server = StubServer.new
+    output, _stderr, status = run_cli("webhooks", "create", server: server)
+    assert_equal 1, status.exitstatus
+    assert_equal "INVALID_ARGUMENT", output["code"]
+    assert_equal "--url is required", output["error"]
+
+    server = StubServer.new(status: 422, body: JSON.generate(errors: ["Url must start with https://"]))
+    output, _stderr, status = run_cli("webhooks", "create", "--url", "http://x.test/hook", server: server)
+    assert_equal 1, status.exitstatus
+    assert_equal ["HTTP_422", "Url must start with https://"], [output["code"], output["error"]]
+
+    server = StubServer.new
+    output, = run_cli("webhooks", "update", "4", server: server)
+    assert_equal "Pass --url, --events, --description, or --active", output["error"]
+  end
+
+  def test_usage_lists_webhooks
+    server = StubServer.new
+    output, = run_cli("help", server: server)
+    assert_includes output["data"]["usage"], "todos-cli webhooks create --url URL"
+    assert_includes output["data"]["usage"], "X-Todo-Signature"
+  end
 end

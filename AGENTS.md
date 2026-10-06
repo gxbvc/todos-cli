@@ -40,6 +40,10 @@ todos-cli tasks remind <id> --user <id|email>
 todos-cli tasks respond <id> [--user <id|email>] --field key=value [--field key=value]
 todos-cli tasks comment <id> "TEXT"|@file.md
 todos-cli tasks comments <id>
+todos-cli webhooks list
+todos-cli webhooks create --url URL [--events TYPE,TYPE|*] [--description TEXT]
+todos-cli webhooks update <id> [--url URL] [--events TYPE,TYPE|*] [--description TEXT] [--active true|false]
+todos-cli webhooks delete|rotate|test|deliveries <id>
 ```
 
 `tasks remind` re-sends mail for one open to-do; `users remind` sends one email covering everything open on that user's board. Both are a re-send, not a new assignment — they never touch a to-do's assigned/pending state, so they cannot suppress a later real assignment email. Admin key required for both.
@@ -67,6 +71,8 @@ The server scores every task on 7 checks (Jev). `tasks create`, `tasks get`/`sho
 - Blocked: `block <id> --reason TEXT` is the assignee's route only (`PATCH /tasks/:id/block.json`): when I cannot do an open to-do someone else gave me without something from them, it goes to their court (status `blocked`, never canceled) with what I need, and they get it in their email batch. `--reason` is required; there is no `--user`; on a to-do I wrote for myself, use `cancel` (`HTTP_422`). `unblock <id> [--note TEXT]` is the asker's (`PATCH /tasks/:id/unblock.json`): after they add what was needed (an `update`, or the note), it goes back to the assignee, open; the note is posted as a comment and goes in the assignee's email. `--status blocked` filters `tasks list`. Decline is gone.
 
 - Comments (todo plan 23: notes are comments): `tasks comment <id> "TEXT"` (markdown, or `@file.md`) posts as me on the member route (`POST /tasks/:id/comments.json`); there is no `--user`. The assignee, the asker, and the reviewer may post in any status, and a comment never changes the status; anyone else on the project gets `HTTP_403`. `tasks comments <id>` lists the thread (`GET /my_tasks/:id.json`); `tasks get` prints it on stderr. Talk about an existing to-do with a comment, not a new to-do. `--notes` on `update` and `respond` is deprecated (one release): it posts a comment and says so on stderr.
+
+- Webhooks (todo plan 25): `webhooks create --url https://... [--events task.submitted,task.approved]` makes one of my own (`POST /webhooks.json`); todo.gxb.vc then POSTs a signed event there seconds after a change on a to-do I can open, so an agent does not poll. `create` and `rotate` print `data.secret` once (stderr says so). `test` queues a `ping`; `deliveries` shows the last 50 (status, code, error). `update --active true` turns on one that was disabled after 50 failed deliveries. Only my own webhooks: any other id is `HTTP_404`. Events, payload, and the signature check: README Webhooks. The URL must be public https: todo.gxb.vc cannot reach this Mac.
 
 Requires a tool-local `.env` with `TODOS_API_KEY` and `TODOS_BASE_URL`; mint keys in todo.gxb.vc Settings, not via this CLI.
 

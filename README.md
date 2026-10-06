@@ -306,6 +306,49 @@ in the thread too, with `kind` `changes_requested`, `blocked`, or `unblocked`.
 it posts a comment as you after the rest of the change, and prints
 `--notes is now a comment. Use: todos-cli tasks comment <id> "text"` on stderr.
 
+### Webhooks
+
+```bash
+todos-cli webhooks create --url https://example.com/todo-hook --events task.submitted,task.approved --description "my agent"
+todos-cli webhooks list
+todos-cli webhooks test 4
+todos-cli webhooks deliveries 4
+todos-cli webhooks update 4 --events "*" --active true
+todos-cli webhooks rotate 4
+todos-cli webhooks delete 4
+```
+
+todo.gxb.vc POSTs a signed event to your https URL a few seconds after a
+change on a to-do you can open (todo plan 25), so an agent does not need to
+poll. `create` and `rotate` print the secret once (`data.secret`); keep it.
+Event types: `task.created`, `task.updated`, `task.submitted`,
+`task.approved`, `task.reopened`, `task.canceled`, `task.blocked`,
+`task.unblocked`, `task.logged`, `comment.created`, `comment.deleted`, or `*`
+(all, the default). The payload is thin (the to-do id, title, status, and
+link, and who made the change); read the rest with `tasks get`.
+
+Check every request before you trust it. The header is
+`X-Todo-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256(secret, "<t>.<raw body>")>`:
+
+```ruby
+require "openssl"
+
+def todo_webhook_valid?(secret, header, raw_body, now: Time.now.to_i)
+  t, v1 = header.to_s.match(/\At=(\d+),v1=(\h{64})\z/)&.captures
+  return false unless t && (now - t.to_i).abs <= 300
+
+  expected = OpenSSL::HMAC.hexdigest("SHA256", secret, "#{t}.#{raw_body}")
+  OpenSSL.fixed_length_secure_compare(expected, v1)
+end
+```
+
+A failed delivery is tried again after 1 min, 5 min, 30 min, 2 h, 6 h, and
+12 h. After 50 failed deliveries in a row the webhook is disabled;
+`webhooks update <id> --active true` turns it on again. Only the owner sees a
+webhook; any other id is `HTTP_404`. The URL must be `https://` and resolve to
+a public address. todo.gxb.vc cannot reach a Mac on a home network: use a
+public https URL (for example Tailscale Funnel or a server).
+
 ## How it works
 
 The command dispatcher uses Ruby's `OptionParser`. `Todos::Client` uses
