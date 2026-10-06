@@ -26,7 +26,7 @@ todos-cli tasks get|show <id> [--user <id|email>]
 todos-cli tasks check -t TITLE [--description MARKDOWN|@file] [--schema JSON|@file]
 todos-cli tasks create -t TITLE --project ID [--assignee EMAIL] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--schema JSON|@file] [--star]
 todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--estimate N] [--source-url URL] [--schema JSON|@file] [--star]
-todos-cli tasks update <id> --user <id|email> [--title TITLE] [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--estimate N] [--source-url URL] [--schema JSON|@file] [--field key=value] [--notes TEXT]
+todos-cli tasks update <id> --user <id|email> [--title TITLE] [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--estimate N] [--source-url URL] [--schema JSON|@file] [--field key=value]
 todos-cli tasks destroy <id> --user <id|email>
 todos-cli tasks approve <id> [--user <id|email>]
 todos-cli tasks send-back <id> --note TEXT
@@ -37,7 +37,9 @@ todos-cli tasks cancel <id> [--user <id|email>]
 todos-cli tasks block <id> --reason TEXT
 todos-cli tasks unblock <id> [--note TEXT]
 todos-cli tasks remind <id> --user <id|email>
-todos-cli tasks respond <id> [--user <id|email>] --field key=value [--field key=value] [--notes TEXT]
+todos-cli tasks respond <id> [--user <id|email>] --field key=value [--field key=value]
+todos-cli tasks comment <id> "TEXT"|@file.md
+todos-cli tasks comments <id>
 ```
 
 `tasks remind` re-sends mail for one open to-do; `users remind` sends one email covering everything open on that user's board. Both are a re-send, not a new assignment — they never touch a to-do's assigned/pending state, so they cannot suppress a later real assignment email. Admin key required for both.
@@ -62,7 +64,9 @@ The server scores every task on 7 checks (Jev). `tasks create`, `tasks get`/`sho
 - Due: `--due YYYY-MM-DD` is the day; `--due-time HH:MM` is a time in 24-hour Central time (America/Chicago). On create, `--due-time` needs `--due`. On update it can come alone, a new `--due` keeps the time, `--due-time ""` clears the time, and `--due ""` clears both. Never put a time in `--due` (refused). Task JSON has `due_at` (ISO 8601, Central offset) or null.
 - `approve` and `star` use my own route without `--user` (I am the reviewer, or for `star` the assignee) and the admin route with it. `send-back` is the reviewer's route only; the admin equivalent is `reopen --user --note`.
 - Submit uses the admin route with `--user`, otherwise self; `reopen --note` requires `--user`.
-- Blocked: `block <id> --reason TEXT` is the assignee's route only (`PATCH /tasks/:id/block.json`): when I cannot do an open to-do someone else gave me without something from them, it goes to their court (status `blocked`, never canceled) with what I need, and they get it in their email batch. `--reason` is required; there is no `--user`; on a to-do I wrote for myself, use `cancel` (`HTTP_422`). `unblock <id> [--note TEXT]` is the asker's (`PATCH /tasks/:id/unblock.json`): after they add what was needed (an `update`, or the note), it goes back to the assignee, open; the note lands on the card and in the assignee's email. `--status blocked` filters `tasks list`. Decline is gone.
+- Blocked: `block <id> --reason TEXT` is the assignee's route only (`PATCH /tasks/:id/block.json`): when I cannot do an open to-do someone else gave me without something from them, it goes to their court (status `blocked`, never canceled) with what I need, and they get it in their email batch. `--reason` is required; there is no `--user`; on a to-do I wrote for myself, use `cancel` (`HTTP_422`). `unblock <id> [--note TEXT]` is the asker's (`PATCH /tasks/:id/unblock.json`): after they add what was needed (an `update`, or the note), it goes back to the assignee, open; the note is posted as a comment and goes in the assignee's email. `--status blocked` filters `tasks list`. Decline is gone.
+
+- Comments (todo plan 23: notes are comments): `tasks comment <id> "TEXT"` (markdown, or `@file.md`) posts as me on the member route (`POST /tasks/:id/comments.json`); there is no `--user`. The assignee, the asker, and the reviewer may post in any status, and a comment never changes the status; anyone else on the project gets `HTTP_403`. `tasks comments <id>` lists the thread (`GET /my_tasks/:id.json`); `tasks get` prints it on stderr. Talk about an existing to-do with a comment, not a new to-do. `--notes` on `update` and `respond` is deprecated (one release): it posts a comment and says so on stderr.
 
 Requires a tool-local `.env` with `TODOS_API_KEY` and `TODOS_BASE_URL`; mint keys in todo.gxb.vc Settings, not via this CLI.
 

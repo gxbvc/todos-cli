@@ -183,7 +183,7 @@ Rewrite or split when:
 ## How todo.gxb.vc scores it
 
 The server asks Jev 7 yes/no questions about the title, the description, and
-each field's label, type, and options. It never reads answers, notes, or
+each field's label, type, and options. It never reads answers, comments, or
 secrets. Each check passes at its own floor. The score is the weakest check:
 70 or more means all 7 pass. While the gate is on, a to-do for someone else
 that fails a blocking check is refused with each failed check and its hint.
@@ -264,3 +264,8 @@ When asked to do complex work and add todos for the human parts:
    outcome, atomic todos under it.
 3. File fewer, sharper todos. Vague extras steal attention.
 4. None of them may need the chat.
+5. To ask or tell the person something about a to-do that already exists,
+   post a comment on it (`todos-cli tasks comment <id> "TEXT"` or the MCP
+   tool `todos_comment`). Do not file a new to-do or rewrite the description
+   for that. A comment never changes the status: a to-do in review stays in
+   review.

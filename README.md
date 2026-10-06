@@ -182,7 +182,7 @@ todos-cli tasks update 99 --user 12 --title "Send signed W-9" --due 2026-08-20
 todos-cli tasks create -t "Call the bank at 214-555-0100 before it closes" --project 3 --due 2026-10-02 --due-time 15:30
 todos-cli tasks update 99 --user 12 --due-time 09:00
 todos-cli tasks update 99 --user 12 --due-time ""
-todos-cli tasks update 99 --user 12 --field ein=12-3456789 --notes "Received"
+todos-cli tasks update 99 --user 12 --field ein=12-3456789
 todos-cli tasks destroy 99 --user 12
 ```
 
@@ -269,22 +269,42 @@ move, with no email, until you unblock it. The reviewer and other members get
 
 `tasks unblock` is for the person who asked: after they add what was needed
 (with `tasks update`, or in `--note`), the to-do goes back to the assignee,
-open. The note lands on the card's notes and in the assignee's email. The
+open. The note is posted as a comment on the to-do and goes in the assignee's email. The
 task JSON has `blocked: {by, at, reason}` while it is blocked. Decline is gone;
 past declines stay canceled, with `declined: {by, at, reason}`.
 
-### Responses and notes
+### Responses
 
 ```bash
-todos-cli tasks respond 99 --field ein=12-3456789 --notes "Ready"
+todos-cli tasks respond 99 --field ein=12-3456789
 todos-cli tasks respond 99 --user andy@example.com \
   --field ein=12-3456789 \
-  --field legal_name="Example LLC" \
-  --notes "Entered from source document"
+  --field legal_name="Example LLC"
 ```
 
-Responses and notes are writable only while a task is open. Without `--user`,
-the CLI patches `/tasks/:id.json`; with it, the nested admin update route.
+Responses are writable only while a task is open. Without `--user`, the CLI
+patches `/tasks/:id.json`; with it, the nested admin update route.
+
+### Comments
+
+```bash
+todos-cli tasks comment 99 "Can you add the Tuesday batch?"
+todos-cli tasks comment 99 @reply.md
+todos-cli tasks comments 99
+```
+
+Notes are comments now (todo plan 23). Each to-do has a thread. The person
+doing it, the person who asked, and the reviewer can comment in any status:
+open, blocked, in review, done, or canceled. A comment never changes the
+status. The text is markdown. `tasks comment` posts as you on the member route
+(`POST /tasks/:id/comments.json`); there is no `--user`. `tasks comments` lists
+the thread (`GET /my_tasks/:id.json`), and `tasks get` prints it on stderr
+under the quality lines. A send back, a block reason, and an unblock note are
+in the thread too, with `kind` `changes_requested`, `blocked`, or `unblocked`.
+
+`--notes` on `tasks update` and `tasks respond` still works for one release:
+it posts a comment as you after the rest of the change, and prints
+`--notes is now a comment. Use: todos-cli tasks comment <id> "text"` on stderr.
 
 ## How it works
 

@@ -2,6 +2,7 @@
 
 require "json"
 require "optparse"
+require "time"
 require "uri"
 
 require "todos/client"
@@ -33,7 +34,7 @@ module Todos
         todos-cli tasks check -t TITLE [--description MARKDOWN|@file] [--schema JSON|@file]
         todos-cli tasks create -t TITLE --project ID [--assignee EMAIL] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--schema JSON|@file] [--star] [--allow-external]
         todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--source-url URL] [--schema JSON|@file] [--star]
-        todos-cli tasks update <id> [--user <id|email>] [--title TITLE] [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--source-url URL] [--schema JSON|@file] [--field key=value] [--notes TEXT]
+        todos-cli tasks update <id> [--user <id|email>] [--title TITLE] [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--source-url URL] [--schema JSON|@file] [--field key=value]
         todos-cli tasks destroy <id> --user <id|email>
         todos-cli tasks submit <id> [--user <id|email>] [--field key=value]
         todos-cli tasks approve <id> [--user <id|email>]
@@ -45,7 +46,9 @@ module Todos
         todos-cli tasks block <id> --reason TEXT
         todos-cli tasks unblock <id> [--note TEXT]
         todos-cli tasks remind <id> --user <id|email>
-        todos-cli tasks respond <id> [--user <id|email>] --field key=value [--field key=value] [--notes TEXT]
+        todos-cli tasks respond <id> [--user <id|email>] --field key=value [--field key=value]
+        todos-cli tasks comment <id> "TEXT"|@file.md
+        todos-cli tasks comments <id>
 
       Every task must be a next physical action.
       Rules and examples: write-human-todos skill.
@@ -79,6 +82,10 @@ module Todos
       to-dos from one asker; past that, --priority-reason TEXT is required and goes in the history.
       --star (and tasks star) pins the to-do for you only: pins do not reorder anyone's list.
       tasks update without --user is the asker's edit (PATCH /tasks/:id); with --user, the admin's.
+      Notes are comments now. tasks comment <id> "TEXT" (or @file.md, markdown) posts one as you: the
+      person doing it, the person who asked, and the reviewer can comment in any status, and a comment
+      never changes the status. tasks comments <id> lists the thread; tasks get prints it on stderr.
+      --notes on tasks update and tasks respond still works for one release: it posts a comment.
     TEXT
 
     def self.run(args, client: Client.new, out: $stdout, err: $stderr)
@@ -379,8 +386,10 @@ module Todos
       when "unblock" then tasks_unblock
       when "remind" then tasks_remind
       when "respond" then tasks_respond
+      when "comment" then tasks_comment
+      when "comments" then tasks_comments
       else
-        fail_usage!("Usage: todos-cli tasks <list|get|show|check|create|update|destroy|approve|send-back|star|plan|submit|reopen|cancel|block|unblock|remind|respond>")
+        fail_usage!("Usage: todos-cli tasks <list|get|show|check|create|update|destroy|approve|send-back|star|plan|submit|reopen|cancel|block|unblock|remind|respond|comment|comments>")
       end
     end
 
@@ -431,7 +440,7 @@ module Todos
       id = required_positional!("task id")
       parse_options(@args, user: true)
       ensure_no_args!
-      with_quality(request(:get, "/tasks/#{id}.json"))
+      with_comments(with_quality(request(:get, "/tasks/#{id}.json")))
     end
 
     # Score a draft without saving it (POST /quality_checks.json). Exits 0
@@ -533,18 +542,15 @@ module Todos
       body = {}
       body[:task] = task unless task.empty?
       body[:response] = parse_fields(options[:fields]) if options[:fields]&.any?
-      body[:notes] = options[:notes] if options.key?(:notes)
-      raise Error.new("Nothing to update", code: "INVALID_ARGUMENT") if body.empty?
-
-      # Without --user: the asker's own edit on the member route.
-      unless options[:user]
-        if options.key?(:source_url)
-          raise Error.new("--source-url needs --user (admin edit)", code: "INVALID_ARGUMENT")
-        end
-        return note_external(request(:patch, "/tasks/#{id}.json", body: body))
+      raise Error.new("Nothing to update", code: "INVALID_ARGUMENT") if body.empty? && !options.key?(:notes)
+      if options.key?(:source_url) && !options[:user]
+        raise Error.new("--source-url needs --user (admin edit)", code: "INVALID_ARGUMENT")
       end
 
-      note_external(request(:patch, "/users/#{resolve_user(options[:user])}/tasks/#{id}.json", body: body))
+      # Without --user: the asker's own edit on the member route.
+      path = options[:user] ? "/users/#{resolve_user(options[:user])}/tasks/#{id}.json" : "/tasks/#{id}.json"
+      result = note_external(request(:patch, path, body: body)) unless body.empty?
+      notes_as_comment(id, options, result)
     end
 
     def tasks_destroy
@@ -668,8 +674,8 @@ module Todos
     end
 
     # The person who asked added what was needed: back to the assignee,
-    # open. --note (optional) says what was added; it goes on the card's
-    # notes and in the assignee's email.
+    # open. --note (optional) says what was added; it is posted as a comment
+    # on the to-do and goes in the assignee's email.
     def tasks_unblock
       id = required_positional!("task id")
       options = parse_options(@args, note: true)
@@ -693,15 +699,60 @@ module Todos
       ensure_no_args!
       body = {}
       body[:response] = parse_fields(options[:fields]) if options[:fields]&.any?
-      body[:notes] = options[:notes] if options.key?(:notes)
-      raise Error.new("Pass at least one --field or --notes", code: "INVALID_ARGUMENT") if body.empty?
+      raise Error.new("Pass at least one --field", code: "INVALID_ARGUMENT") if body.empty? && !options.key?(:notes)
 
       path = if options[:user]
                "/users/#{resolve_user(options[:user])}/tasks/#{id}.json"
              else
                "/tasks/#{id}.json"
              end
-      request(:patch, path, body: body)
+      result = request(:patch, path, body: body) unless body.empty?
+      notes_as_comment(id, options, result)
+    end
+
+    # Post a comment on a to-do as me (todo plan 23: notes are comments), on
+    # the member route: the person doing it, the person who asked, and the
+    # reviewer may post, in any status, and the status never changes.
+    # "@file.md" reads a file; the text is markdown. data is the comment
+    # {id, kind, body, author, at}.
+    def tasks_comment
+      id = required_positional!("task id")
+      text = @args.shift.to_s
+      ensure_no_args!
+      text = comment_text(text)
+      raise Error.new("Missing comment text (or @file.md)", code: "INVALID_ARGUMENT") if text.strip.empty?
+
+      post_comment(id, text)
+    end
+
+    # The thread, oldest first, from my own route (GET /my_tasks/:id.json).
+    def tasks_comments
+      id = required_positional!("task id")
+      ensure_no_args!
+      task = request(:get, "/my_tasks/#{id}.json")
+      comments = task.is_a?(Hash) ? task["comments"] : nil
+      raise Error.new("Task response did not include comments", code: "INVALID_RESPONSE") unless comments.is_a?(Array)
+
+      comments
+    end
+
+    def post_comment(id, text) = request(:post, "/tasks/#{id}/comments.json", body: { body: text })
+
+    # The deprecated --notes (one release): posts a comment as me, after the
+    # rest of the change, and says so on stderr. Returns the task from the
+    # change with the new comment in its thread, or the comment when
+    # --notes was all there was.
+    def notes_as_comment(id, options, result)
+      return result unless options.key?(:notes)
+
+      @err.puts(%(--notes is now a comment. Use: todos-cli tasks comment #{id} "text"))
+      return result if options[:notes].to_s.strip.empty?
+
+      comment = post_comment(id, options[:notes])
+      return comment unless result.is_a?(Hash)
+
+      result["comments"] = Array(result["comments"]) + [ comment ] if result.key?("comments")
+      result
     end
 
     def users_list
@@ -843,6 +894,41 @@ module Todos
     def with_quality(task)
       self.class.print_quality(@err, task["quality"]) if task.is_a?(Hash) && task["quality"].is_a?(Hash)
       task
+    end
+
+    COMMENT_LABELS = { "changes_requested" => "Sent back", "blocked" => "Blocked", "unblocked" => "Unblocked", "migrated" => "From the old notes" }.freeze
+
+    # The thread under the answers, on stderr (data has it as comments).
+    # Returns the task as is.
+    def with_comments(task)
+      comments = task.is_a?(Hash) ? task["comments"] : nil
+      return task unless comments.is_a?(Array) && comments.any?
+
+      @err.puts("Comments (#{comments.size}):")
+      comments.each do |comment|
+        label = COMMENT_LABELS[comment["kind"]]
+        head = [ comment.dig("author", "name") || "Someone", comment_time(comment["at"]) ].compact.join(", ")
+        head += " [#{label}]" if label
+        @err.puts("  #{head}:")
+        comment["body"].to_s.each_line { |line| @err.puts("    #{line.chomp}") }
+      end
+      task
+    end
+
+    def comment_time(value)
+      Time.iso8601(value.to_s).localtime.strftime("%b %-d, %-l:%M %p")
+    rescue ArgumentError
+      value
+    end
+
+    # Comment text in markdown, or "@file.md" for a file.
+    def comment_text(value)
+      return value unless value.start_with?("@")
+
+      path = File.expand_path(value.delete_prefix("@"))
+      raise Error.new("Comment file not found: #{path}", code: "INVALID_ARGUMENT") unless File.file?(path)
+
+      File.read(path)
     end
 
     # A day only. A time in --due would be dropped by the server without a

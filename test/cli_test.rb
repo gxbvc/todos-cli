@@ -177,7 +177,7 @@ class TodosCliTest < Minitest::Test
       },
       {
         args: %w[tasks update 9 --user 7 --title Revised --project 4 --description <p>New</p> --due 2026-09-01 --estimate 30 --source-url https://tickets.gxb.vc/456 --schema] +
-          [JSON.generate(schema)] + %w[--field ein=12-345 --notes Ready],
+          [JSON.generate(schema)] + %w[--field ein=12-345],
         method: "PATCH",
         target: "/users/7/tasks/9.json",
         body: {
@@ -186,8 +186,7 @@ class TodosCliTest < Minitest::Test
             "due_date" => "2026-09-01", "estimated_minutes" => 30,
             "source_url" => "https://tickets.gxb.vc/456", "fields_schema" => schema
           },
-          "response" => { "ein" => "12-345" },
-          "notes" => "Ready"
+          "response" => { "ein" => "12-345" }
         }
       },
       {
@@ -252,16 +251,16 @@ class TodosCliTest < Minitest::Test
         body: nil
       },
       {
-        args: %w[tasks respond 9 --user 7 --field ein=12-345 --field name=Jane --notes Done],
+        args: %w[tasks respond 9 --user 7 --field ein=12-345 --field name=Jane],
         method: "PATCH",
         target: "/users/7/tasks/9.json",
-        body: { "response" => { "ein" => "12-345", "name" => "Jane" }, "notes" => "Done" }
+        body: { "response" => { "ein" => "12-345", "name" => "Jane" } }
       },
       {
-        args: %w[tasks respond 9 --field ein=12-345 --notes Done],
+        args: %w[tasks respond 9 --field ein=12-345],
         method: "PATCH",
         target: "/tasks/9.json",
-        body: { "response" => { "ein" => "12-345" }, "notes" => "Done" }
+        body: { "response" => { "ein" => "12-345" } }
       },
       {
         args: %w[areas create --user 7 -t BrightView --position 2 --active true],
@@ -353,6 +352,86 @@ class TodosCliTest < Minitest::Test
       end
     end
   end
+
+# Todo plan 23: notes are comments.
+def test_tasks_comment_posts_on_the_member_route
+  comment = { id: 5, kind: "comment", body: "Any update?", author: { id: 1, name: "Christian Genco" }, at: "2026-10-06T19:41:00Z" }
+  server = StubServer.new({ status: 201, body: JSON.generate(comment) })
+
+  output, _stderr, status = run_cli("tasks", "comment", "677", "Any update?", server: server)
+  request = server.requests.pop
+
+  assert status.success?
+  assert_equal [ "POST", "/tasks/677/comments.json" ], [ request[:method], request[:target] ]
+  assert_equal({ "body" => "Any update?" }, json_body(request))
+  assert_equal "Any update?", output.dig("data", "body")
+end
+
+def test_tasks_comment_reads_a_file_and_needs_text
+  Dir.mktmpdir do |dir|
+    path = File.join(dir, "reply.md")
+    File.write(path, "Line one\n\n```\nls -la\n```\n")
+    server = StubServer.new({ status: 201, body: JSON.generate(id: 6) })
+    run_cli("tasks", "comment", "677", "@#{path}", server: server)
+    assert_equal "Line one\n\n```\nls -la\n```\n", json_body(server.requests.pop)["body"]
+  end
+
+  output, _stderr, status = run_cli("tasks", "comment", "677", server: StubServer.new)
+  refute status.success?
+  assert_equal "INVALID_ARGUMENT", output["code"]
+end
+
+def test_tasks_comments_lists_the_thread_from_my_route
+  task = { id: 677, comments: [ { id: 5, kind: "changes_requested", body: "Add Tuesday", author: { id: 5, name: "Ricky Bureau" } } ] }
+  server = StubServer.new({ body: JSON.generate(task) })
+
+  output, = run_cli("tasks", "comments", "677", server: server)
+
+  assert_equal "/my_tasks/677.json", server.requests.pop[:target]
+  assert_equal [ "Add Tuesday" ], output["data"].map { |comment| comment["body"] }
+end
+
+def test_get_prints_the_thread_under_the_answers
+  task = { id: 677, title: "Reply", comments: [
+    { id: 5, kind: "changes_requested", body: "Add Tuesday\nand Wednesday", author: { id: 5, name: "Ricky Bureau" }, at: "2026-10-06T19:41:00Z" },
+    { id: 6, kind: "comment", body: "Done", author: { id: 1, name: "Christian Genco" }, at: "2026-10-06T20:00:00Z" }
+  ] }
+  server = StubServer.new({ body: JSON.generate(task) })
+
+  output, stderr, = run_cli("tasks", "get", "677", server: server)
+
+  assert_equal 2, output.dig("data", "comments").size
+  assert_includes stderr, "Comments (2):"
+  assert_match(/  Ricky Bureau, Oct 6, .+ \[Sent back\]:\n    Add Tuesday\n    and Wednesday\n/, stderr)
+  assert_match(/  Christian Genco, Oct 6, .+:\n    Done\n/, stderr)
+end
+
+def test_notes_on_respond_posts_a_comment_after_the_answers_and_warns
+  task = { id: 9, status: "open", comments: [] }
+  comment = { id: 7, kind: "comment", body: "Ready" }
+  server = StubServer.new({ body: JSON.generate(task) }, { status: 201, body: JSON.generate(comment) })
+
+  output, stderr, status = run_cli("tasks", "respond", "9", "--user", "7", "--field", "ein=12-345", "--notes", "Ready", server: server)
+  patch = server.requests.pop
+  post = server.requests.pop
+
+  assert status.success?
+  assert_equal [ "PATCH", "/users/7/tasks/9.json", { "response" => { "ein" => "12-345" } } ], [ patch[:method], patch[:target], json_body(patch) ]
+  assert_equal [ "POST", "/tasks/9/comments.json", { "body" => "Ready" } ], [ post[:method], post[:target], json_body(post) ]
+  assert_includes stderr, %(--notes is now a comment. Use: todos-cli tasks comment 9 "text")
+  assert_equal [ "Ready" ], output.dig("data", "comments").map { |c| c["body"] }
+end
+
+def test_notes_alone_on_update_posts_only_the_comment
+  server = StubServer.new({ status: 201, body: JSON.generate(id: 7, kind: "comment", body: "Received") })
+
+  output, stderr, = run_cli("tasks", "update", "9", "--user", "7", "--notes", "Received", server: server)
+  request = server.requests.pop
+
+  assert_equal [ "POST", "/tasks/9/comments.json" ], [ request[:method], request[:target] ]
+  assert_equal "Received", output.dig("data", "body")
+  assert_includes stderr, "--notes is now a comment"
+end
 
   def test_projects_create_without_user_says_it_is_my_own_project
     output, stderr, status = run_cli(*%w[projects create -t Side-work], server: StubServer.new({}))
