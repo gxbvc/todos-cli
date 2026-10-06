@@ -258,13 +258,14 @@ accept response fields; update/respond while the task is open first. A reopen
 note is available only on the admin nested route because it can notify the
 client.
 
-`tasks block` is for the assignee of an open to-do that someone else gave
-them, when they cannot do it without something from that person. The to-do
-goes to their court (status `blocked`; it is not canceled), with what is
-needed, and they get it in their email batch (every to-do email waits up to
-5 minutes and goes out with the others). `--reason` is required, and there is
-no `--user` form. A to-do you wrote for yourself you cancel instead
-(`HTTP_422`). The reviewer and other members get `HTTP_403`.
+`tasks block` is for the assignee of an open to-do, when they cannot do it
+without something from the person who asked. The to-do goes to their court
+(status `blocked`; it is not canceled), with what is needed, and they get it
+in their email batch (every to-do email waits up to 5 minutes and goes out
+with the others). `--reason` is required, and there is no `--user` form. A
+to-do you wrote for yourself can be blocked too: it waits in your own Your
+move, with no email, until you unblock it. The reviewer and other members get
+`HTTP_403`.
 
 `tasks unblock` is for the person who asked: after they add what was needed
 (with `tasks update`, or in `--note`), the to-do goes back to the assignee,
