@@ -19,7 +19,7 @@ module Todos
         todos-cli users show <id|email>
         todos-cli users remind <id|email>
         todos-cli board [--user <id|email>]
-        todos-cli logbook [--kind logged|canceled]
+        todos-cli logbook [--kind logged|canceled] [--before DATE | --all]
         todos-cli areas list --user <id|email>
         todos-cli areas create --user <id|email> -t TITLE [--position N] [--active true|false]
         todos-cli areas invite <id> --email EMAIL
@@ -76,11 +76,15 @@ module Todos
       recommended first. Optional: "key" (made from the label), "placeholder", "required": true.
       Leave --schema out when marking done is enough.
       My board leaves canceled to-dos off: they are in the logbook (todos-cli logbook), and
-      tasks list --status canceled reads them from there.
+      tasks list --status canceled reads them from there (every week).
+      logbook gives one week: the 7 days before --before DATE (default: up to today). stderr names
+      the --before for the week before; --all reads every week.
       --due-time HH:MM is 24-hour Central time and goes with --due. On update, --due-time "" clears the
       time and --due "" clears the date and the time.
       --zone is the zone of --due-time (an IANA name like America/New_York; Central when left out).
       --do-on DATE is the day to work on it: it shows in Today that day, and the deadline stays.
+      Set --do-on only when the person chose that day. Never set it to today to get their attention:
+      Today fills with to-dos nobody planned. Use --due for a real deadline, or --priority.
       --no-deadline says there is no deadline on purpose. tasks plan is the doer's own: --do-on and
       --no-deadline (only while the asker set no deadline).
       tasks cancel and tasks reopen take --reason TEXT: one line on why, shown in the history. Give it
@@ -477,7 +481,7 @@ module Todos
       # My board leaves canceled to-dos off; they are in my logbook. The
       # admin's --user board still has them.
       if options[:status] == "canceled" && !options[:user]
-        tasks = logbook_entries("canceled")
+        tasks = logbook_entries("canceled", all: true)
         tasks.select! { |task| task["project_id"].to_s == options[:project].to_s } if options[:project]
         return tasks
       end
@@ -493,21 +497,37 @@ module Todos
     # What left my board, newest first (GET /logbook.json): to-dos I logged
     # (kind logged, logged_at) and canceled to-dos of my board's projects
     # (kind canceled, canceled_at, declined with the reason).
+    # One week at a time (todo plan 26): the 7 days before --before DATE
+    # (the server's default: up to today). The reply's next_before is the
+    # week before; stderr names it. --all follows it to the oldest week.
     def logbook
-      options = parse_options(@args, kind: true)
+      options = parse_options(@args, kind: true, before: true, all: true)
       ensure_no_args!
       if options[:kind] && !%w[logged canceled].include?(options[:kind])
         raise Error.new("--kind must be logged or canceled", code: "INVALID_ARGUMENT")
       end
+      raise Error.new("Pass --before DATE or --all, not both", code: "INVALID_ARGUMENT") if options[:before] && options[:all]
 
-      logbook_entries(options[:kind])
+      logbook_entries(options[:kind], before: options[:before], all: options[:all])
     end
 
-    def logbook_entries(kind = nil)
-      payload = request(:get, "/logbook.json")
-      entries = payload.is_a?(Hash) ? payload["entries"] : nil
-      raise Error.new("Logbook response did not include entries", code: "INVALID_RESPONSE") unless entries.is_a?(Array)
+    LOGBOOK_MAX_WEEKS = 520
 
+    def logbook_entries(kind = nil, before: nil, all: false)
+      entries = []
+      LOGBOOK_MAX_WEEKS.times do
+        payload = @client.request(:get, "/logbook.json", query: (before.to_s.empty? ? {} : { before: before }))
+        page = payload.is_a?(Hash) ? payload["entries"] : nil
+        raise Error.new("Logbook response did not include entries", code: "INVALID_RESPONSE") unless page.is_a?(Array)
+
+        entries.concat(page)
+        before = payload["next_before"]
+        break if before.to_s.empty?
+        next if all
+
+        @err.puts("Older entries: todos-cli logbook --before #{before} (or --all)")
+        break
+      end
       kind ? entries.select { |entry| entry["kind"] == kind } : entries
     end
 
@@ -933,6 +953,8 @@ module Todos
                                   "Types: text textarea url password file voice radio checkboxes.") { |value| options[:schema] = value } if allowed[:schema]
       parser.on("--status STATUS") { |value| options[:status] = value } if allowed[:status]
       parser.on("--kind KIND") { |value| options[:kind] = value } if allowed[:kind]
+      parser.on("--before DATE", "Logbook: the 7 days before this day (YYYY-MM-DD)") { |value| options[:before] = plan_date(value, "--before") } if allowed[:before]
+      parser.on("--all", "Logbook: every week") { options[:all] = true } if allowed[:all]
       if allowed[:position]
         parser.on("--position N") { |value| options[:position] = Integer(value) }
       end

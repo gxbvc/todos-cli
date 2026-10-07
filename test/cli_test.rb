@@ -846,6 +846,32 @@ end
     assert_match "--kind must be logged or canceled", output["error"]
   end
 
+  def test_logbook_pages_by_week_with_before_and_all
+    first = LOGBOOK.merge(next_before: "2026-09-30")
+    second = { user: { id: 7 }, entries: [ { id: 3, title: "Older", kind: "logged" } ], next_before: nil }
+
+    server = StubServer.new(body: JSON.generate(first))
+    output, stderr, status = run_cli("logbook", server: server)
+    assert status.success?
+    assert_equal [ 5, 6, 9 ], output["data"].map { |entry| entry["id"] }
+    assert_includes stderr, "Older entries: todos-cli logbook --before 2026-09-30 (or --all)"
+
+    server = StubServer.new(body: JSON.generate(second))
+    output, = run_cli("logbook", "--before", "2026-09-30", server: server)
+    assert_equal [ 3 ], output["data"].map { |entry| entry["id"] }
+    assert_equal "/logbook.json?before=2026-09-30", server.requests.pop[:target]
+
+    server = StubServer.new({ body: JSON.generate(first) }, { body: JSON.generate(second) })
+    output, stderr, = run_cli("logbook", "--all", server: server)
+    assert_equal [ 5, 6, 9, 3 ], output["data"].map { |entry| entry["id"] }
+    refute_includes stderr, "Older entries"
+    assert_equal [ "/logbook.json", "/logbook.json?before=2026-09-30" ], 2.times.map { server.requests.pop[:target] }
+
+    output, _stderr, status = run_cli("logbook", "--before", "2026-09-30", "--all", server: StubServer.new)
+    refute status.success?
+    assert_match "not both", output["error"]
+  end
+
   def test_tasks_list_status_canceled_reads_the_logbook_without_user
     server = StubServer.new(body: JSON.generate(LOGBOOK))
     output, _stderr, status = run_cli("tasks", "list", "--status", "canceled", "--project", "3", server: server)

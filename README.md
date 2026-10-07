@@ -157,6 +157,8 @@ that bound route.
 ```bash
 todos-cli logbook
 todos-cli logbook --kind canceled
+todos-cli logbook --before 2026-09-30
+todos-cli logbook --all
 todos-cli tasks list --status canceled
 ```
 
@@ -166,7 +168,13 @@ Your board leaves canceled to-dos off. They go to your logbook (`GET
 `reviewer`, and `declined` (`{by, at, reason}` when the assignee declined it).
 The canceled entries are the canceled to-dos of every project on your board,
 whoever does them. `tasks list --status canceled` without `--user` reads them
-from the logbook; with `--user`, the admin board still has every status.
+from the logbook (every week); with `--user`, the admin board still has every
+status.
+
+The logbook gives one week at a time: the 7 days before `--before DATE`
+(default: up to today). The reply has `next_before`, the date for the week
+before, or null when nothing is older; stderr names it. `--all` reads every
+week.
 
 ### Create and update tasks
 

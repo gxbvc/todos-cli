@@ -143,6 +143,15 @@ Both are `todos-cli` flags, not description text.
   one it depends on. Hidden in the UI, readable through the API. It keeps the
   trail out of the description. Must be `http://` or `https://`.
 
+### Plan day (`--do-on`)
+
+`--do-on DATE` puts the todo in the person's Today on that day. Set it only
+when the person chose the day ("I will call the bank Friday"). Never set it to
+today to get their attention: Today fills with todos nobody planned, and the
+ones that matter get lost. A real deadline is `--due`. Importance is
+`--priority`. With no deadline and no day the person chose, the todo waits in
+Needs a date, where the person picks a day.
+
 ### Response fields
 
 One instruction field per value you need back. No fields when marking done is
