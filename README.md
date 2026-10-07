@@ -310,6 +310,18 @@ the thread (`GET /my_tasks/:id.json`), and `tasks get` prints it on stderr
 under the quality lines. A send back, a block reason, and an unblock note are
 in the thread too, with `kind` `changes_requested`, `blocked`, or `unblocked`.
 
+### Old text
+
+```bash
+todos-cli tasks versions 99
+```
+
+Each edit of a to-do's title, description, or fields keeps the old and the
+new text (todo plan 26). `tasks versions` lists them newest first
+(`GET /tasks/:id/versions.json`): `{id, created_at, by, changes}`, where
+`changes` is `{"description": [old, new]}` for what that edit changed. Answers
+and secrets are never kept there. Anyone who can open the to-do can read them.
+
 `--notes` on `tasks update` and `tasks respond` still works for one release:
 it posts a comment as you after the rest of the change, and prints
 `--notes is now a comment. Use: todos-cli tasks comment <id> "text"` on stderr.

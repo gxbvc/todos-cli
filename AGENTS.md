@@ -40,6 +40,7 @@ todos-cli tasks remind <id> --user <id|email>
 todos-cli tasks respond <id> [--user <id|email>] --field key=value [--field key=value]
 todos-cli tasks comment <id> "TEXT"|@file.md
 todos-cli tasks comments <id>
+todos-cli tasks versions <id>
 todos-cli webhooks list
 todos-cli webhooks create --url URL [--events TYPE,TYPE|*] [--description TEXT]
 todos-cli webhooks update <id> [--url URL] [--events TYPE,TYPE|*] [--description TEXT] [--active true|false]

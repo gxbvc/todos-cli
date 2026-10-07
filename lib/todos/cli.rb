@@ -49,6 +49,7 @@ module Todos
         todos-cli tasks respond <id> [--user <id|email>] --field key=value [--field key=value]
         todos-cli tasks comment <id> "TEXT"|@file.md
         todos-cli tasks comments <id>
+        todos-cli tasks versions <id>
         todos-cli webhooks list
         todos-cli webhooks create --url URL [--events TYPE,TYPE|*] [--description TEXT]
         todos-cli webhooks update <id> [--url URL] [--events TYPE,TYPE|*] [--description TEXT] [--active true|false]
@@ -96,6 +97,8 @@ module Todos
       Notes are comments now. tasks comment <id> "TEXT" (or @file.md, markdown) posts one as you: the
       person doing it, the person who asked, and the reviewer can comment in any status, and a comment
       never changes the status. tasks comments <id> lists the thread; tasks get prints it on stderr.
+      tasks versions <id> lists the old copies of the title, description, and fields, newest first:
+      {id, created_at, by, changes: {description: [old, new]}}. Never answers.
       --notes on tasks update and tasks respond still works for one release: it posts a comment.
       Webhooks: todo.gxb.vc POSTs a signed event to your https URL when a to-do you can open changes.
       --events: task.created task.updated task.submitted task.approved task.reopened task.canceled
@@ -467,8 +470,9 @@ module Todos
       when "respond" then tasks_respond
       when "comment" then tasks_comment
       when "comments" then tasks_comments
+      when "versions" then tasks_versions
       else
-        fail_usage!("Usage: todos-cli tasks <list|get|show|check|create|update|destroy|approve|send-back|star|plan|submit|reopen|cancel|block|unblock|remind|respond|comment|comments>")
+        fail_usage!("Usage: todos-cli tasks <list|get|show|check|create|update|destroy|approve|send-back|star|plan|submit|reopen|cancel|block|unblock|remind|respond|comment|comments|versions>")
       end
     end
 
@@ -829,6 +833,20 @@ module Todos
       raise Error.new("Task response did not include comments", code: "INVALID_RESPONSE") unless comments.is_a?(Array)
 
       comments
+    end
+
+    # Old copies of the title, description, and fields (todo plan 26),
+    # newest first, from GET /tasks/:id/versions.json: each
+    # {id, created_at, by, changes: {"description" => [old, new]}}. Only
+    # people who can open the to-do (the admin too) read them.
+    def tasks_versions
+      id = required_positional!("task id")
+      ensure_no_args!
+      body = request(:get, "/tasks/#{id}/versions.json")
+      versions = body.is_a?(Hash) ? body["versions"] : nil
+      raise Error.new("Response did not include versions", code: "INVALID_RESPONSE") unless versions.is_a?(Array)
+
+      versions
     end
 
     def post_comment(id, text) = request(:post, "/tasks/#{id}/comments.json", body: { body: text })

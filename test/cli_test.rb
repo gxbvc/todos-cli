@@ -391,6 +391,17 @@ def test_tasks_comments_lists_the_thread_from_my_route
   assert_equal [ "Add Tuesday" ], output["data"].map { |comment| comment["body"] }
 end
 
+def test_tasks_versions_lists_old_text_newest_first
+  body = { task_id: 677, versions: [ { id: 9, created_at: "2026-10-07T20:00:00Z", by: { id: 1, name: "Christian Genco" },
+                                       changes: { description: [ "Old", "New" ] } } ] }
+  server = StubServer.new({ body: JSON.generate(body) })
+
+  output, = run_cli("tasks", "versions", "677", server: server)
+
+  assert_equal "/tasks/677/versions.json", server.requests.pop[:target]
+  assert_equal [ [ "Old", "New" ] ], output["data"].map { |version| version.dig("changes", "description") }
+end
+
 def test_get_prints_the_thread_under_the_answers
   task = { id: 677, title: "Reply", comments: [
     { id: 5, kind: "changes_requested", body: "Add Tuesday\nand Wednesday", author: { id: 5, name: "Ricky Bureau" }, at: "2026-10-06T19:41:00Z" },
