@@ -165,6 +165,7 @@ enough.
 | `password` | A secret. Only the asker reads it back, on the web page. Never ask for a secret in prose. |
 | `file` | An upload. |
 | `voice` | A voice memo, for a talk or record task. |
+| `recording` | A screen and voice recording, to show how they do something on the computer. Only the assignee records. Scribe transcribes it, and the transcript shows next to the video. |
 | `radio` | One pick from 2 or more short options, recommended first. |
 | `checkboxes` | Any number of picks, when more than one can apply. |
 

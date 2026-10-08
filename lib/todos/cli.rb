@@ -73,6 +73,7 @@ module Todos
       --schema is a JSON array (or @file.json) of fields, one per answer you need back:
         [{"label":"Booking URL","type":"url","required":true}]
       Types: text, textarea, url, password (a secret only the asker reads back), file, voice,
+      recording (a screen and voice recording: only the assignee records; Scribe transcribes it),
       radio (pick one), checkboxes (pick any). radio and checkboxes need "options": 2 or more,
       recommended first. Optional: "key" (made from the label), "placeholder", "required": true.
       Leave --schema out when marking done is enough.
@@ -968,7 +969,7 @@ module Todos
       parser.on("--priority-reason TEXT", "Why one more Urgent (needed past 3 open Urgent from one asker)") { |value| options[:priority_reason] = value } if allowed[:priority_reason]
       parser.on("--source-url URL") { |value| options[:source_url] = source_url(value) } if allowed[:source_url]
       parser.on("--schema JSON", "Fields as a JSON array, or @file.json: [{label, type, options?, required?}]. " \
-                                  "Types: text textarea url password file voice radio checkboxes.") { |value| options[:schema] = value } if allowed[:schema]
+                                  "Types: text textarea url password file voice recording radio checkboxes.") { |value| options[:schema] = value } if allowed[:schema]
       parser.on("--status STATUS") { |value| options[:status] = value } if allowed[:status]
       parser.on("--kind KIND") { |value| options[:kind] = value } if allowed[:kind]
       parser.on("--before DATE", "Logbook: the 7 days before this day (YYYY-MM-DD)") { |value| options[:before] = plan_date(value, "--before") } if allowed[:before]
