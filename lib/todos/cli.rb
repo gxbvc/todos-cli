@@ -20,6 +20,7 @@ module Todos
         todos-cli users remind <id|email>
         todos-cli board [--user <id|email>]
         todos-cli logbook [--kind logged|canceled] [--before DATE | --all]
+        todos-cli events [--after ID] [--limit N]
         todos-cli areas list --user <id|email>
         todos-cli areas create --user <id|email> -t TITLE [--position N] [--active true|false]
         todos-cli areas invite <id> --email EMAIL
@@ -108,6 +109,12 @@ module Todos
       X-Todo-Signature t=<unix>,v1=<hex HMAC-SHA256(secret, "<t>.<raw body>")>; refuse t older than
       5 minutes. The payload is thin (id, title, status, link): read the rest with tasks get.
       update --active true turns on a webhook that was disabled after 50 failed deliveries.
+      events: the changes after --after ID (0 when left out), oldest first, on to-dos you can open
+      (GET /events.json). --limit is 200 when left out, 500 at most. Prints {events, next_after_id, more}:
+      keep next_after_id for the next --after; more: true means call again now. Each event has type
+      (the webhook type), kind, at, actor, via (web, api, oauth, system, or null), via_key (your key
+      name, only on your own changes), from_status, to_status, data (the webhook keys), and task {id,
+      title, status, project_id, project_title, user_id, assigner_id, url}. Never answers or comments.
     TEXT
 
     def self.run(args, client: Client.new, out: $stdout, err: $stderr)
@@ -174,6 +181,7 @@ module Todos
       when "users" then users
       when "board" then board
       when "logbook" then logbook
+      when "events" then events
       when "areas" then areas
       when "projects" then projects
       when "tasks" then tasks
@@ -514,6 +522,18 @@ module Todos
       raise Error.new("Pass --before DATE or --all, not both", code: "INVALID_ARGUMENT") if options[:before] && options[:all]
 
       logbook_entries(options[:kind], before: options[:before], all: options[:all])
+    end
+
+    # What changed after --after (GET /events.json): the whole reply,
+    # {events, next_after_id, more}, so a poller keeps next_after_id.
+    def events
+      options = parse_options(@args, after: true, limit: true)
+      ensure_no_args!
+      query = { after_id: options[:after], limit: options[:limit] }.compact
+      payload = @client.request(:get, "/events.json", query: query)
+      raise Error.new("Events response did not include events", code: "INVALID_RESPONSE") unless payload.is_a?(Hash) && payload["events"].is_a?(Array)
+
+      payload
     end
 
     LOGBOOK_MAX_WEEKS = 520
@@ -974,6 +994,8 @@ module Todos
       parser.on("--kind KIND") { |value| options[:kind] = value } if allowed[:kind]
       parser.on("--before DATE", "Logbook: the 7 days before this day (YYYY-MM-DD)") { |value| options[:before] = plan_date(value, "--before") } if allowed[:before]
       parser.on("--all", "Logbook: every week") { options[:all] = true } if allowed[:all]
+      parser.on("--after ID", "Events: the changes after this event id") { |value| options[:after] = whole_number(value, "--after") } if allowed[:after]
+      parser.on("--limit N", "Events: at most N (500 at most)") { |value| options[:limit] = positive_integer(value, "--limit") } if allowed[:limit]
       if allowed[:position]
         parser.on("--position N") { |value| options[:position] = Integer(value) }
       end
@@ -1089,6 +1111,13 @@ module Todos
       end
 
       format("%02d:%02d", match[1].to_i, match[2].to_i)
+    end
+
+    def whole_number(value, name)
+      integer = Integer(value.strip, 10, exception: false)
+      raise Error.new("#{name} must be a whole number, 0 or more", code: "INVALID_ARGUMENT") unless integer && integer >= 0
+
+      integer
     end
 
     def positive_integer(value, name)

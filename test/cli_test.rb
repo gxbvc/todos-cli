@@ -857,6 +857,24 @@ end
     assert_match "--kind must be logged or canceled", output["error"]
   end
 
+  def test_events_reads_the_changes_after_an_id
+    body = { events: [ { id: 41, type: "task.submitted", kind: "submitted", via: "web", task: { id: 677 } } ],
+             next_after_id: 41, more: false }
+    server = StubServer.new(body: JSON.generate(body))
+    output, _stderr, status = run_cli("events", "--after", "40", "--limit", "5", server: server)
+    assert status.success?
+    assert_equal [ "GET", "/events.json?after_id=40&limit=5" ], server.requests.pop.values_at(:method, :target)
+    assert_equal [ 41, 41, false ], [ output.dig("data", "events", 0, "id"), output.dig("data", "next_after_id"), output.dig("data", "more") ]
+
+    server = StubServer.new(body: JSON.generate(body))
+    run_cli("events", server: server)
+    assert_equal "/events.json", server.requests.pop[:target]
+
+    output, _stderr, status = run_cli("events", "--after", "-1", server: StubServer.new)
+    refute status.success?
+    assert_match "--after must be a whole number", output["error"]
+  end
+
   def test_logbook_pages_by_week_with_before_and_all
     first = LOGBOOK.merge(next_before: "2026-09-30")
     second = { user: { id: 7 }, entries: [ { id: 3, title: "Older", kind: "logged" } ], next_before: nil }

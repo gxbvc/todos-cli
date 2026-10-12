@@ -41,11 +41,14 @@ todos-cli tasks respond <id> [--user <id|email>] --field key=value [--field key=
 todos-cli tasks comment <id> "TEXT"|@file.md
 todos-cli tasks comments <id>
 todos-cli tasks versions <id>
+todos-cli events [--after ID] [--limit N]
 todos-cli webhooks list
 todos-cli webhooks create --url URL [--events TYPE,TYPE|*] [--description TEXT]
 todos-cli webhooks update <id> [--url URL] [--events TYPE,TYPE|*] [--description TEXT] [--active true|false]
 todos-cli webhooks delete|rotate|test|deliveries <id>
 ```
+
+`events` is one read of every change after `--after` (`GET /events.json?after_id=N&limit=200`, max 500), oldest first, on to-dos the key's owner can open (the admin too: no wider). It prints the whole reply `{events, next_after_id, more}`; pass `next_after_id` as the next `--after`, and call again at once while `more` is true. Each event: `type` (the webhook type), `kind`, `at`, `actor`, `via` (`web`, `api`, `oauth`, `system`, or null), `via_key` (the key's name, only on the caller's own changes), `from_status`, `to_status`, `data` (webhook keys only), `task {id, title, status, project_id, project_title, user_id, assigner_id, url}`.
 
 `tasks remind` re-sends mail for one open to-do; `users remind` sends one email covering everything open on that user's board. Both are a re-send, not a new assignment — they never touch a to-do's assigned/pending state, so they cannot suppress a later real assignment email. Admin key required for both.
 

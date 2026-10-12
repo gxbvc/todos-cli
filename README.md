@@ -152,6 +152,22 @@ Task lists are read from a board and filtered locally. Valid statuses are
 visible-task route `/tasks/:id.json`; the optional `--user` does not change
 that bound route.
 
+### Events
+
+```bash
+todos-cli events --limit 5
+todos-cli events --after 6100
+```
+
+Every change after `--after` (`GET /events.json`), oldest first, on to-dos
+you can open: `{events, next_after_id, more}`. Keep `next_after_id` and pass
+it as the next `--after`; `more: true` means call again now. `--limit` is 200
+when left out, 500 at most. Each event has the webhook `type`, `kind`, `at`,
+`actor`, `via` (`web`, `api`, `oauth`, `system`, or null), `via_key` (your
+key's name, only on your own changes), `from_status`, `to_status`, `data`
+(the webhook keys), and the to-do's id, title, status, project, assignee and
+assigner ids, and link. Never answers or comment bodies.
+
 ### Logbook
 
 ```bash
