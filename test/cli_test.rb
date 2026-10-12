@@ -381,6 +381,47 @@ def test_tasks_comment_reads_a_file_and_needs_text
   assert_equal "INVALID_ARGUMENT", output["code"]
 end
 
+# Todo plan 32: files in a comment, sent as multipart files[].
+def test_tasks_comment_attaches_files_as_multipart
+  Dir.mktmpdir do |dir|
+    shot = File.join(dir, "shot.png")
+    log = File.join(dir, "trace.log")
+    File.binwrite(shot, "\x89PNG fake")
+    File.write(log, "line one")
+    reply = { id: 8, kind: "comment", body: "See these", files: [ { id: 1, filename: "shot.png" } ] }
+    server = StubServer.new({ status: 201, body: JSON.generate(reply) })
+
+    output, _stderr, status = run_cli("tasks", "comment", "677", "See these", "--file", shot, "--file", log, server: server)
+    request = server.requests.pop
+
+    assert status.success?
+    assert_equal [ "POST", "/tasks/677/comments.json" ], [ request[:method], request[:target] ]
+    assert_match %r{\Amultipart/form-data; boundary=}, request[:headers]["content-type"]
+    assert_includes request[:body], %(name="body")
+    assert_includes request[:body], "See these"
+    assert_includes request[:body], %(name="files[]"; filename="shot.png")
+    assert_includes request[:body], "Content-Type: image/png"
+    assert_includes request[:body], %(filename="trace.log")
+    assert_includes request[:body], "line one"
+    assert_equal "shot.png", output.dig("data", "files", 0, "filename")
+  end
+end
+
+def test_tasks_comment_files_only_and_a_missing_file
+  Dir.mktmpdir do |dir|
+    shot = File.join(dir, "shot.png")
+    File.binwrite(shot, "png")
+    server = StubServer.new({ status: 201, body: JSON.generate(id: 9, body: "") })
+    _output, _stderr, status = run_cli("tasks", "comment", "677", "--file", shot, server: server)
+    assert status.success?
+    assert_includes server.requests.pop[:body], %(filename="shot.png")
+
+    output, _stderr, status = run_cli("tasks", "comment", "677", "--file", File.join(dir, "nope.png"), server: StubServer.new)
+    refute status.success?
+    assert_equal "INVALID_ARGUMENT", output["code"]
+  end
+end
+
 def test_tasks_comments_lists_the_thread_from_my_route
   task = { id: 677, comments: [ { id: 5, kind: "changes_requested", body: "Add Tuesday", author: { id: 5, name: "Ricky Bureau" } } ] }
   server = StubServer.new({ body: JSON.generate(task) })

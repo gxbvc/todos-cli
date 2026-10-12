@@ -48,7 +48,7 @@ module Todos
         todos-cli tasks unblock <id> [--note TEXT]
         todos-cli tasks remind <id> --user <id|email>
         todos-cli tasks respond <id> [--user <id|email>] --field key=value [--field key=value]
-        todos-cli tasks comment <id> "TEXT"|@file.md
+        todos-cli tasks comment <id> ["TEXT"|@file.md] [--file PATH ...]
         todos-cli tasks comments <id>
         todos-cli tasks versions <id>
         todos-cli webhooks list
@@ -99,6 +99,9 @@ module Todos
       Notes are comments now. tasks comment <id> "TEXT" (or @file.md, markdown) posts one as you: the
       person doing it, the person who asked, and the reviewer can comment in any status, and a comment
       never changes the status. tasks comments <id> lists the thread; tasks get prints it on stderr.
+      --file PATH (repeat it, up to 10, 25 MB each, any type) attaches files to the comment; with
+      files the text may be left out. Each comment's files are {id, filename, content_type, byte_size,
+      url}; the url checks access and redirects to a short-lived link.
       tasks versions <id> lists the old copies of the title, description, and fields, newest first:
       {id, created_at, by, changes: {description: [old, new]}}. Never answers.
       --notes on tasks update and tasks respond still works for one release: it posts a comment.
@@ -833,16 +836,54 @@ module Todos
     # Post a comment on a to-do as me (todo plan 23: notes are comments), on
     # the member route: the person doing it, the person who asked, and the
     # reviewer may post, in any status, and the status never changes.
-    # "@file.md" reads a file; the text is markdown. data is the comment
-    # {id, kind, body, author, at}.
+    # "@file.md" reads a file; the text is markdown. --file PATH (repeatable)
+    # attaches files (todo plan 32), sent as multipart files[]; with files
+    # the text may be left out. data is the comment
+    # {id, kind, body, author, at, files}.
     def tasks_comment
       id = required_positional!("task id")
+      options = parse_options(@args, files: true)
       text = @args.shift.to_s
       ensure_no_args!
       text = comment_text(text)
-      raise Error.new("Missing comment text (or @file.md)", code: "INVALID_ARGUMENT") if text.strip.empty?
+      paths = Array(options[:files])
+      if text.strip.empty? && paths.empty?
+        raise Error.new("Missing comment text (or @file.md, or --file PATH)", code: "INVALID_ARGUMENT")
+      end
+      return post_comment(id, text) if paths.empty?
 
-      post_comment(id, text)
+      post_comment_with_files(id, text, paths)
+    end
+
+    COMMENT_FILE_LIMIT = 10
+    CONTENT_TYPES = {
+      ".png" => "image/png", ".jpg" => "image/jpeg", ".jpeg" => "image/jpeg", ".gif" => "image/gif",
+      ".webp" => "image/webp", ".heic" => "image/heic", ".pdf" => "application/pdf", ".txt" => "text/plain",
+      ".md" => "text/markdown", ".csv" => "text/csv", ".json" => "application/json", ".zip" => "application/zip",
+      ".mp4" => "video/mp4", ".mov" => "video/quicktime", ".mp3" => "audio/mpeg", ".m4a" => "audio/mp4"
+    }.freeze
+
+    def post_comment_with_files(id, text, paths)
+      if paths.size > COMMENT_FILE_LIMIT
+        raise Error.new("Attach #{COMMENT_FILE_LIMIT} files at most", code: "INVALID_ARGUMENT")
+      end
+
+      files = paths.map do |value|
+        path = File.expand_path(value)
+        raise Error.new("File not found: #{path}", code: "INVALID_ARGUMENT") unless File.file?(path)
+
+        path
+      end
+      opened = files.map { |path| File.open(path, "rb") }
+      form = [ [ "body", text ] ]
+      opened.each_with_index do |io, index|
+        name = File.basename(files[index])
+        type = CONTENT_TYPES.fetch(File.extname(name).downcase, "application/octet-stream")
+        form << [ "files[]", io, { filename: name, content_type: type } ]
+      end
+      @client.request(:post, "/tasks/#{id}/comments.json", form: form)
+    ensure
+      opened&.each(&:close)
     end
 
     # The thread, oldest first, from my own route (GET /my_tasks/:id.json).
@@ -1005,6 +1046,7 @@ module Todos
       parser.on("--field KEY=VALUE") { |value| (options[:fields] ||= []) << value } if allowed[:fields]
       parser.on("--notes TEXT") { |value| options[:notes] = value } if allowed[:notes]
       parser.on("--note TEXT") { |value| options[:note] = value } if allowed[:note]
+      parser.on("--file PATH", "Attach a file (repeatable)") { |value| (options[:files] ||= []) << value } if allowed[:files]
       parser.on("--reason TEXT") { |value| options[:reason] = value } if allowed[:reason]
       parser.on("--star") { options[:star] = true } if allowed[:star]
       parser.on("--off") { options[:off] = true } if allowed[:off]

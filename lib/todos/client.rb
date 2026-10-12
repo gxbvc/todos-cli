@@ -15,10 +15,13 @@ module Todos
       @api_key = api_key.to_s.strip
     end
 
-    def request(method, path, body: nil, query: {})
+    # +form+ (an array of [name, value] or [name, io, {filename:, content_type:}])
+    # sends multipart/form-data instead of a JSON body: files.
+    def request(method, path, body: nil, query: {}, form: nil)
       validate_config!
       uri = build_uri(path, query)
       request = build_request(method, uri, body)
+      request.set_form(form, "multipart/form-data") if form
       response = perform(uri, request)
       parse_response(response)
     rescue Todos::Error

@@ -314,6 +314,7 @@ patches `/tasks/:id.json`; with it, the nested admin update route.
 ```bash
 todos-cli tasks comment 99 "Can you add the Tuesday batch?"
 todos-cli tasks comment 99 @reply.md
+todos-cli tasks comment 99 "Here is the error" --file shot.png --file trace.log
 todos-cli tasks comments 99
 ```
 
@@ -325,6 +326,12 @@ status. The text is markdown. `tasks comment` posts as you on the member route
 the thread (`GET /my_tasks/:id.json`), and `tasks get` prints it on stderr
 under the quality lines. A send back, a block reason, and an unblock note are
 in the thread too, with `kind` `changes_requested`, `blocked`, or `unblocked`.
+
+`--file PATH` attaches a file to the comment (todo plan 32). Repeat it for
+more: up to 10 files, 25 MB each, any type. With files, the text may be left
+out. Each comment in JSON has `files: [{id, filename, content_type, byte_size,
+url}]`. The url checks that you can open the to-do and then redirects to a
+storage link that works for a few minutes.
 
 ### Old text
 
