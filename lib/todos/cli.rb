@@ -77,6 +77,9 @@ module Todos
       recording (a screen and voice recording: only the assignee records; Scribe transcribes it),
       radio (pick one), checkboxes (pick any). radio and checkboxes need "options": 2 or more,
       recommended first. Optional: "key" (made from the label), "placeholder", "required": true.
+      When the person may want to show something (a screenshot, a PDF), add a file field next to the
+      text question, labeled like "Screenshots (optional)". A text answer cannot hold files. They can
+      also attach files to a comment (tasks comment <id> "text" --file PATH).
       Leave --schema out when marking done is enough.
       My board leaves canceled to-dos off: they are in the logbook (todos-cli logbook), and
       tasks list --status canceled reads them from there (every week).

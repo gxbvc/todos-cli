@@ -172,6 +172,10 @@ enough.
 Each field has a `label` and a `type`. `radio` and `checkboxes` need
 `options`. Set `"required": true` when Done must wait for the answer.
 
+When the person may want to show something (a screenshot, a PDF), add a `file`
+field next to the text question, labeled like `Screenshots (optional)`. A text
+answer cannot hold files. They can also attach files to a comment.
+
 ## Projects
 
 A short outcome title (`Website launch`, `Anthropic billing`). Describe the
