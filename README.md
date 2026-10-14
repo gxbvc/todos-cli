@@ -256,8 +256,9 @@ check on stderr, with the hint for each fail. A refused create (422) exits 1
 and puts `quality` in the envelope.
 
 Update and destroy are admin nested routes and require `--user`.
-`--schema` accepts either a JSON array or `@path.json`. Repeated `--field`
-arguments produce the top-level `response` object accepted by nested updates.
+`--schema` accepts either a JSON array or `@path.json`. `--field key=value`
+answers a field (a plain value stays a string). Checkboxes take a JSON array
+(`--field picks='["A","B"]'`) or a repeated key (`--field picks=A --field picks=B`).
 
 ### Status transitions
 

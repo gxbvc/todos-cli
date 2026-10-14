@@ -38,6 +38,7 @@ todos-cli tasks block <id> --reason TEXT
 todos-cli tasks unblock <id> [--note TEXT]
 todos-cli tasks remind <id> --user <id|email>
 todos-cli tasks respond <id> [--user <id|email>] --field key=value [--field key=value]
+# checkboxes: --field picks='["A","B"]'  or  --field picks=A --field picks=B
 todos-cli tasks comment <id> ["TEXT"|@file.md] [--file PATH ...]
 todos-cli tasks comments <id>
 todos-cli tasks versions <id>

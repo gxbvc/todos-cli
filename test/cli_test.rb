@@ -263,6 +263,18 @@ class TodosCliTest < Minitest::Test
         body: { "response" => { "ein" => "12-345" } }
       },
       {
+        args: ["tasks", "respond", "9", "--field", 'picks=["A","B"]'],
+        method: "PATCH",
+        target: "/tasks/9.json",
+        body: { "response" => { "picks" => ["A", "B"] } }
+      },
+      {
+        args: %w[tasks respond 9 --field picks=A --field picks=B],
+        method: "PATCH",
+        target: "/tasks/9.json",
+        body: { "response" => { "picks" => ["A", "B"] } }
+      },
+      {
         args: %w[areas create --user 7 -t BrightView --position 2 --active true],
         method: "POST",
         target: "/users/7/areas.json",
@@ -456,6 +468,22 @@ def test_get_prints_the_thread_under_the_answers
   assert_includes stderr, "Comments (2):"
   assert_match(/  Ricky Bureau, Oct 6, .+ \[Sent back\]:\n    Add Tuesday\n    and Wednesday\n/, stderr)
   assert_match(/  Christian Genco, Oct 6, .+:\n    Done\n/, stderr)
+end
+
+def test_field_invalid_json_array_is_invalid_argument
+  output, _stderr, status = run_cli("tasks", "respond", "9", "--field", "picks=[A", server: StubServer.new)
+
+  refute status.success?
+  assert_equal false, output["ok"]
+  assert_equal "INVALID_ARGUMENT", output["code"]
+  assert_match(/Invalid --field JSON array for picks/, output["error"])
+end
+
+def test_usage_shows_checkbox_field_example
+  output, = run_cli("help", server: StubServer.new)
+
+  assert_includes output["data"]["usage"], %{--field picks='["A","B"]'}
+  assert_includes output["data"]["usage"], "--field picks=A --field picks=B"
 end
 
 def test_notes_on_respond_posts_a_comment_after_the_answers_and_warns

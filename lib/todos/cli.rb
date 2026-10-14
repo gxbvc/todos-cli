@@ -77,6 +77,8 @@ module Todos
       recording (a screen and voice recording: only the assignee records; Scribe transcribes it),
       radio (pick one), checkboxes (pick any). radio and checkboxes need "options": 2 or more,
       recommended first. Optional: "key" (made from the label), "placeholder", "required": true.
+      --field answers a field: --field ein=12-3456789 stays a string. Checkboxes take a JSON array
+      (--field picks='["A","B"]') or a repeated key (--field picks=A --field picks=B).
       When the person may want to show something (a screenshot, a PDF), add a file field next to the
       text question, labeled like "Screenshots (optional)". A text answer cannot hold files. They can
       also attach files to a comment (tasks comment <id> "text" --file PATH).
@@ -1046,7 +1048,7 @@ module Todos
       if allowed[:active]
         parser.on("--active VALUE") { |value| options[:active] = parse_bool(value, "--active") }
       end
-      parser.on("--field KEY=VALUE") { |value| (options[:fields] ||= []) << value } if allowed[:fields]
+      parser.on("--field KEY=VALUE", "Answer a field. Checkboxes: --field picks='[\"A\",\"B\"]' or repeat --field picks=A --field picks=B") { |value| (options[:fields] ||= []) << value } if allowed[:fields]
       parser.on("--notes TEXT") { |value| options[:notes] = value } if allowed[:notes]
       parser.on("--note TEXT") { |value| options[:note] = value } if allowed[:note]
       parser.on("--file PATH", "Attach a file (repeatable)") { |value| (options[:files] ||= []) << value } if allowed[:files]
@@ -1236,8 +1238,24 @@ module Todos
         if separator.empty? || key.empty?
           raise Error.new("--field must use key=value", code: "INVALID_ARGUMENT")
         end
-        parsed[key] = value
+        parsed_value = parse_field_value(key, value)
+        parsed[key] = if parsed.key?(key)
+          Array(parsed[key]) + Array(parsed_value)
+        else
+          parsed_value
+        end
       end
+    end
+
+    def parse_field_value(key, value)
+      return value unless value.start_with?("[")
+
+      parsed = JSON.parse(value)
+      return parsed if parsed.is_a?(Array)
+
+      raise Error.new("--field #{key} must be a JSON array when it starts with [", code: "INVALID_ARGUMENT")
+    rescue JSON::ParserError => e
+      raise Error.new("Invalid --field JSON array for #{key}: #{e.message}", code: "INVALID_ARGUMENT")
     end
 
     def required_positional!(name)
