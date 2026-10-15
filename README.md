@@ -334,6 +334,28 @@ out. Each comment in JSON has `files: [{id, filename, content_type, byte_size,
 url}]`. The url checks that you can open the to-do and then redirects to a
 storage link that works for a few minutes.
 
+### No-sign-in links
+
+```bash
+todos-cli tasks link 99 --days 7
+todos-cli tasks links 99
+todos-cli tasks link-expire 99 7 --at 2026-10-20
+todos-cli tasks unlink 99 7
+```
+
+A no-sign-in link (todo plan 36) lets the person doing a to-do open that one
+card, answer it, upload files, and press Done without an account. Only the
+asker (the reviewer) or the admin makes one. `tasks link` prints
+`{id, url, expires_at}`: the `url` holds the secret and is shown once, so copy
+it now. Whoever has it can answer as that person until it ends (14 days
+unless `--days 1` to `30`): send it only to them. `tasks links` lists a
+to-do's links without secrets (`id, for, created_by, expires_at, revoked_at,
+last_used_at, uses_count, active`). `tasks unlink` ends one at once.
+`tasks link-expire --at DATE` shortens or extends it (a date, or an ISO 8601
+time; 30 days from now at most). Reassigning the to-do ends its open links.
+A link opens one card: no comments, no history, and no file downloads. Answers
+it writes show a link mark and `via: "link"` in the events feed.
+
 ### Old text
 
 ```bash

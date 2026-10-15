@@ -51,6 +51,10 @@ module Todos
         todos-cli tasks comment <id> ["TEXT"|@file.md] [--file PATH ...]
         todos-cli tasks comments <id>
         todos-cli tasks versions <id>
+        todos-cli tasks link <id> [--days N]
+        todos-cli tasks links <id>
+        todos-cli tasks unlink <id> <link_id>
+        todos-cli tasks link-expire <id> <link_id> --at DATE
         todos-cli webhooks list
         todos-cli webhooks create --url URL [--events TYPE,TYPE|*] [--description TEXT]
         todos-cli webhooks update <id> [--url URL] [--events TYPE,TYPE|*] [--description TEXT] [--active true|false]
@@ -110,6 +114,15 @@ module Todos
       tasks versions <id> lists the old copies of the title, description, and fields, newest first:
       {id, created_at, by, changes: {description: [old, new]}}. Never answers.
       --notes on tasks update and tasks respond still works for one release: it posts a comment.
+      tasks link <id> [--days N] makes a no-sign-in link (todo plan 36) for the person doing the to-do:
+      they open it, answer, upload files, and press Done with no account. --days is 1 to 30 (14 when
+      left out). data is {id, url, expires_at}: data.url holds the secret and is shown once, so copy
+      it now. Anyone who has the URL can answer as that person until it ends: send it only to them.
+      tasks links <id> lists the links (no secrets): id, for, created_by, expires_at, revoked_at,
+      last_used_at, uses_count, active. tasks unlink <id> <link_id> ends one at once. tasks
+      link-expire <id> <link_id> --at DATE moves its end (YYYY-MM-DD, or an ISO 8601 time; 30 days
+      from now at most). Only the asker (reviewer) or the admin does these. Reassigning the to-do
+      ends its open links. A link opens one card, with no comments, history, or file downloads.
       Webhooks: todo.gxb.vc POSTs a signed event to your https URL when a to-do you can open changes.
       --events: task.created task.updated task.submitted task.approved task.reopened task.canceled
       task.blocked task.unblocked task.logged comment.created comment.deleted, or * (all, the default).
@@ -488,8 +501,12 @@ module Todos
       when "comment" then tasks_comment
       when "comments" then tasks_comments
       when "versions" then tasks_versions
+      when "link" then tasks_link
+      when "links" then tasks_links
+      when "unlink" then tasks_unlink
+      when "link-expire" then tasks_link_expire
       else
-        fail_usage!("Usage: todos-cli tasks <list|get|show|check|create|update|destroy|approve|send-back|star|plan|submit|reopen|cancel|block|unblock|remind|respond|comment|comments|versions>")
+        fail_usage!("Usage: todos-cli tasks <list|get|show|check|create|update|destroy|approve|send-back|star|plan|submit|reopen|cancel|block|unblock|remind|respond|comment|comments|versions|link|links|unlink|link-expire>")
       end
     end
 
@@ -916,6 +933,51 @@ module Todos
       versions
     end
 
+    # A no-sign-in link for the person doing the to-do (todo plan 36,
+    # POST /tasks/:id/links.json). The asker's or the admin's. data.url has
+    # the secret in its fragment and is in this reply only.
+    def tasks_link
+      id = required_positional!("task id")
+      options = parse_options(@args, days: true)
+      ensure_no_args!
+      body = options.key?(:days) ? { expires_in_days: options[:days] } : nil
+      result = request(:post, "/tasks/#{id}/links.json", body: body)
+      if result.is_a?(Hash) && result["url"]
+        @err.puts("Copy data.url now: it is not shown again. Whoever has it can answer as the assignee until #{result["expires_at"]}: send it only to them.")
+      end
+      result
+    end
+
+    # The links on a to-do, no secrets (GET /tasks/:id/links.json).
+    def tasks_links
+      id = required_positional!("task id")
+      ensure_no_args!
+      body = request(:get, "/tasks/#{id}/links.json")
+      links = body.is_a?(Hash) ? body["links"] : nil
+      raise Error.new("Response did not include links", code: "INVALID_RESPONSE") unless links.is_a?(Array)
+
+      links
+    end
+
+    # End a link now (DELETE /tasks/:id/links/:link_id.json).
+    def tasks_unlink
+      id = required_positional!("task id")
+      link_id = required_positional!("link id")
+      ensure_no_args!
+      request(:delete, "/tasks/#{id}/links/#{link_id}.json")
+    end
+
+    # Move a link's end (PATCH /tasks/:id/links/:link_id.json): a date
+    # (end of that day, Central) or an ISO 8601 time; 30 days from now at most.
+    def tasks_link_expire
+      id = required_positional!("task id")
+      link_id = required_positional!("link id")
+      options = parse_options(@args, at: true)
+      ensure_no_args!
+      at = required_option!(options[:at].to_s.strip, "--at")
+      request(:patch, "/tasks/#{id}/links/#{link_id}.json", body: { expires_at: at })
+    end
+
     def post_comment(id, text) = request(:post, "/tasks/#{id}/comments.json", body: { body: text })
 
     # The deprecated --notes (one release): posts a comment as me, after the
@@ -1053,6 +1115,8 @@ module Todos
       parser.on("--note TEXT") { |value| options[:note] = value } if allowed[:note]
       parser.on("--file PATH", "Attach a file (repeatable)") { |value| (options[:files] ||= []) << value } if allowed[:files]
       parser.on("--reason TEXT") { |value| options[:reason] = value } if allowed[:reason]
+      parser.on("--days N", "Link: days until it ends (1 to 30, 14 when left out)") { |value| options[:days] = link_days(value) } if allowed[:days]
+      parser.on("--at DATE", "Link: when it ends (YYYY-MM-DD or an ISO 8601 time)") { |value| options[:at] = link_time(value) } if allowed[:at]
       parser.on("--star") { options[:star] = true } if allowed[:star]
       parser.on("--off") { options[:off] = true } if allowed[:off]
       parser.on("--allow-external") { options[:allow_external] = true } if allowed[:allow_external]
@@ -1165,6 +1229,20 @@ module Todos
       raise Error.new("#{name} must be a whole number, 0 or more", code: "INVALID_ARGUMENT") unless integer && integer >= 0
 
       integer
+    end
+
+    def link_days(value)
+      days = Integer(value.strip, exception: false)
+      raise Error.new("--days takes a whole number from 1 to 30", code: "INVALID_ARGUMENT") unless days&.between?(1, 30)
+
+      days
+    end
+
+    def link_time(value)
+      value = value.strip
+      return value if value.match?(/\A\d{4}-\d{2}-\d{2}(T[\d:.]+(Z|[+-]\d{2}:?\d{2}))?\z/)
+
+      raise Error.new("--at takes a date (YYYY-MM-DD) or an ISO 8601 time like 2026-10-20T15:00:00Z", code: "INVALID_ARGUMENT")
     end
 
     def positive_integer(value, name)
