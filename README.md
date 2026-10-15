@@ -393,8 +393,25 @@ Event types: `task.created`, `task.updated`, `task.submitted`,
 (all, the default). The payload is thin (the to-do id, title, status, and
 link, and who made the change); read the rest with `tasks get`.
 
-Check every request before you trust it. The header is
-`X-Todo-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256(secret, "<t>.<raw body>")>`:
+Check every request before you trust it. todo.gxb.vc signs with Standard
+Webhooks (todo plan 37): `webhook-id` (the same on every retry: skip a repeat),
+`webhook-timestamp` (unix seconds, refuse one over 5 minutes off), and
+`webhook-signature: v1,<base64 HMAC-SHA256(key, "<webhook-id>.<webhook-timestamp>.<raw body>")>`.
+The key is the base64-decoded part of the secret after `whsec_`, not the text:
+
+```ruby
+def todo_webhook_valid?(secret, headers, raw_body, now: Time.now.to_i)
+  id, ts, sigs = headers.values_at("webhook-id", "webhook-timestamp", "webhook-signature")
+  return false if [ id, ts, sigs ].any?(&:to_s.empty?) || (now - ts.to_i).abs > 300
+
+  key = Base64.strict_decode64(secret.delete_prefix("whsec_"))
+  expected = "v1," + Base64.strict_encode64(OpenSSL::HMAC.digest("SHA256", key, "#{id}.#{ts}.#{raw_body}"))
+  sigs.split.any? { |sig| OpenSSL.fixed_length_secure_compare(sig, expected) rescue false }
+end
+```
+
+The old header is sent for one more release, then dropped:
+`X-Todo-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256(secret, "<t>.<raw body>")>` (the key is the whole secret text):
 
 ```ruby
 require "openssl"

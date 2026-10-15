@@ -1242,5 +1242,6 @@ end
     output, = run_cli("help", server: server)
     assert_includes output["data"]["usage"], "todos-cli webhooks create --url URL"
     assert_includes output["data"]["usage"], "X-Todo-Signature"
+    assert_includes output["data"]["usage"], "webhook-signature"
   end
 end

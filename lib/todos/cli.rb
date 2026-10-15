@@ -126,9 +126,12 @@ module Todos
       Webhooks: todo.gxb.vc POSTs a signed event to your https URL when a to-do you can open changes.
       --events: task.created task.updated task.submitted task.approved task.reopened task.canceled
       task.blocked task.unblocked task.logged comment.created comment.deleted, or * (all, the default).
-      create and rotate print the secret once (data.secret): keep it. Check each request:
-      X-Todo-Signature t=<unix>,v1=<hex HMAC-SHA256(secret, "<t>.<raw body>")>; refuse t older than
-      5 minutes. The payload is thin (id, title, status, link): read the rest with tasks get.
+      create and rotate print the secret once (data.secret): keep it. Check each request with
+      Standard Webhooks: webhook-id, webhook-timestamp, webhook-signature "v1,<base64
+      HMAC-SHA256(key, "<id>.<timestamp>.<raw body>")>"; key = base64-decoded secret after "whsec_"
+      (not the text); refuse a timestamp over 5 minutes off; skip a repeated webhook-id. The old
+      X-Todo-Signature t=<unix>,v1=<hex HMAC-SHA256(secret, "<t>.<raw body>")> is sent for one more
+      release. The payload is thin (id, title, status, link): read the rest with tasks get.
       update --active true turns on a webhook that was disabled after 50 failed deliveries.
       events: the changes after --after ID (0 when left out), oldest first, on to-dos you can open
       (GET /events.json). --limit is 200 when left out, 500 at most. Prints {events, next_after_id, more}:
