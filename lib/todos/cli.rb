@@ -35,7 +35,7 @@ module Todos
         todos-cli tasks get|show <id> [--user <id|email>]
         todos-cli tasks check -t TITLE [--description MARKDOWN|@file] [--schema JSON|@file]
         todos-cli tasks create -t TITLE --project ID [--assignee EMAIL] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--context NAME,NAME] [--schema JSON|@file] [--star] [--allow-external]
-        todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--source-url URL] [--context NAME,NAME] [--schema JSON|@file] [--star]
+        todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--source-url URL] [--schema JSON|@file] [--star]
         todos-cli tasks update <id> [--user <id|email>] [--title TITLE] [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--source-url URL] [--context NAME,NAME] [--schema JSON|@file] [--field key=value]
         todos-cli tasks destroy <id> --user <id|email>
         todos-cli tasks submit <id> [--user <id|email>] [--field key=value]
@@ -109,8 +109,11 @@ module Todos
       where, or with what, it gets done. Repeat --context or use a comma list. On update it
       REPLACES your set; --context "" clears it. Contexts are personal: only you see them.
       Set one when where or with what the person must be is clear: desk with the big screen
-      and security key: office; a phone tap: phone; a voice-only answer: bike. List yours
-      with todos-cli contexts (the descriptions say what each means; make them on /settings).
+      and security key: office; a phone tap: phone; out in town: errands; a voice-only
+      answer on a ride: bike; at home, no desk: home. List yours with todos-cli contexts
+      (the descriptions say what each means; make them on /settings). --context is the
+      member route only: with --user it is refused (the admin route cannot set another
+      person's contexts).
       tasks update without --user is the asker's edit (PATCH /tasks/:id); with --user, the admin's.
       Notes are comments now. tasks comment <id> "TEXT" (or @file.md, markdown) posts one as you: the
       person doing it, the person who asked, and the reviewer can comment in any status, and a comment
@@ -668,6 +671,9 @@ module Todos
         if options[:allow_external]
           raise Error.new("--allow-external is for the member route; the admin route (--user) is not checked", code: "INVALID_ARGUMENT")
         end
+        if options.key?(:contexts)
+          raise Error.new("--context is for the member route: contexts are personal, and the admin route (--user) cannot set another person's. Run tasks update <id> --context after.", code: "INVALID_ARGUMENT")
+        end
         task[:source_url] = options[:source_url] if options.key?(:source_url)
         return note_external(with_quality(request(:post, "/users/#{resolve_user(options[:user])}/tasks.json", body: { task: task })))
       end
@@ -719,6 +725,9 @@ module Todos
       raise Error.new("Nothing to update", code: "INVALID_ARGUMENT") if body.empty? && !options.key?(:notes)
       if options.key?(:source_url) && !options[:user]
         raise Error.new("--source-url needs --user (admin edit)", code: "INVALID_ARGUMENT")
+      end
+      if options[:user] && options.key?(:contexts)
+        raise Error.new("--context is for the member route: contexts are personal, and the admin route (--user) cannot set another person's", code: "INVALID_ARGUMENT")
       end
 
       # Without --user: the asker's own edit on the member route.

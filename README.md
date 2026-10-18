@@ -157,7 +157,7 @@ stderr when there are any.
 
 ```bash
 todos-cli tasks list
- todos-cli tasks list --user andy@example.com --project 7 --status open
+todos-cli tasks list --user andy@example.com --project 7 --status open
 todos-cli tasks list --context office,bike
 todos-cli tasks get 99
 ```

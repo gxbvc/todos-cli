@@ -1312,6 +1312,26 @@ class TodosCliContextsTest < Minitest::Test
     usage = output["data"]["usage"]
     assert_includes usage, "todos-cli contexts"
     assert_includes usage, "--context"
-    assert_includes usage, "voice-only answer: bike"
+    %w[office phone errands bike home].each { |name| assert_includes usage, ": #{name}" }
+  end
+
+  def requests_of(server)
+    rows = []
+    rows << server.requests.pop until server.requests.empty?
+    rows
+  end
+
+  def test_context_is_refused_with_user_the_admin_route_cannot_set_another_persons_contexts
+    server = StubServer.new
+    output, _stderr, status = run_cli("tasks", "create", "--user", "7", "-t", "T", "--context", "office", server: server)
+    assert_equal 1, status.exitstatus
+    assert_equal "INVALID_ARGUMENT", output["code"]
+    assert_empty requests_of(server)
+
+    server = StubServer.new
+    output, _stderr, status = run_cli("tasks", "update", "9", "--user", "7", "--context", "office", server: server)
+    assert_equal 1, status.exitstatus
+    assert_equal "INVALID_ARGUMENT", output["code"]
+    assert_empty requests_of(server)
   end
 end
