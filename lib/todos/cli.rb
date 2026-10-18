@@ -30,12 +30,13 @@ module Todos
         todos-cli projects invite <id> --email EMAIL
         todos-cli invites list
         todos-cli invites accept <id> [--area ID]
-        todos-cli tasks list [--user <id|email>] [--project ID] [--status STATUS]
+        todos-cli contexts
+        todos-cli tasks list [--user <id|email>] [--project ID] [--status STATUS] [--context NAME,NAME]
         todos-cli tasks get|show <id> [--user <id|email>]
         todos-cli tasks check -t TITLE [--description MARKDOWN|@file] [--schema JSON|@file]
-        todos-cli tasks create -t TITLE --project ID [--assignee EMAIL] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--schema JSON|@file] [--star] [--allow-external]
-        todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--source-url URL] [--schema JSON|@file] [--star]
-        todos-cli tasks update <id> [--user <id|email>] [--title TITLE] [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--source-url URL] [--schema JSON|@file] [--field key=value]
+        todos-cli tasks create -t TITLE --project ID [--assignee EMAIL] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--context NAME,NAME] [--schema JSON|@file] [--star] [--allow-external]
+        todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--source-url URL] [--context NAME,NAME] [--schema JSON|@file] [--star]
+        todos-cli tasks update <id> [--user <id|email>] [--title TITLE] [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--source-url URL] [--context NAME,NAME] [--schema JSON|@file] [--field key=value]
         todos-cli tasks destroy <id> --user <id|email>
         todos-cli tasks submit <id> [--user <id|email>] [--field key=value]
         todos-cli tasks approve <id> [--user <id|email>]
@@ -104,6 +105,12 @@ module Todos
       --priority is urgent, high, normal (the default), or low. Each person can hold 3 open Urgent
       to-dos from one asker; past that, --priority-reason TEXT is required and goes in the history.
       --star (and tasks star) pins the to-do for you only: pins do not reorder anyone's list.
+      --context (tasks create and tasks update) tags the to-do with a GTD context of yours —
+      where, or with what, it gets done. Repeat --context or use a comma list. On update it
+      REPLACES your set; --context "" clears it. Contexts are personal: only you see them.
+      Set one when where or with what the person must be is clear: desk with the big screen
+      and security key: office; a phone tap: phone; a voice-only answer: bike. List yours
+      with todos-cli contexts (the descriptions say what each means; make them on /settings).
       tasks update without --user is the asker's edit (PATCH /tasks/:id); with --user, the admin's.
       Notes are comments now. tasks comment <id> "TEXT" (or @file.md, markdown) posts one as you: the
       person doing it, the person who asked, and the reviewer can comment in any status, and a comment
@@ -210,6 +217,7 @@ module Todos
       when "projects" then projects
       when "tasks" then tasks
       when "invites" then invites
+      when "contexts" then contexts
       when "webhooks" then webhooks
       when "help", "-h", "--help", nil then { usage: USAGE }
       else
@@ -392,6 +400,17 @@ module Todos
       end
     end
 
+    # My GTD contexts (plan 42): name, description, position. They are made
+    # on /settings; this lists them so an agent can pick --context names.
+    def contexts
+      subcommand = @args.shift
+      if subcommand
+        @args.unshift(subcommand)
+        fail_usage!("Usage: todos-cli contexts (list only; add, rename, and delete on /settings)")
+      end
+      request(:get, "/contexts.json")["contexts"]
+    end
+
     # Join the project (project-4), filed in one of my areas (--area) or my
     # Shared area; data is the project as projects.json shows it. Or join the
     # area (area-2), its projects filed in one of my areas (--area) or a new
@@ -514,7 +533,7 @@ module Todos
     end
 
     def tasks_list
-      options = parse_options(@args, user: true, project: true, status: true)
+      options = parse_options(@args, user: true, project: true, status: true, context: true)
       ensure_no_args!
       if options[:status] && !STATUSES.include?(options[:status])
         raise Error.new("Status must be one of: #{STATUSES.join(", ")}", code: "INVALID_ARGUMENT")
@@ -532,6 +551,11 @@ module Todos
       tasks = flatten_tasks(payload)
       tasks.select! { |task| task["project_id"].to_s == options[:project].to_s } if options[:project]
       tasks.select! { |task| task["status"] == options[:status] } if options[:status]
+      # My contexts on each row (plan 42); match any of the names. --context
+      # on tasks list is client-side: board rows carry my own names.
+      if (names = context_names(options))
+        tasks.select! { |task| (Array(task["contexts"]) & names).any? }
+      end
       tasks
     end
 
@@ -617,7 +641,7 @@ module Todos
         @args,
         user: true, title: true, project: true, assignee: true, description: true, due: true, due_time: true, estimate: true,
         source_url: true, schema: true, star: true, allow_external: true, priority: true, priority_reason: true,
-        zone: true, do_on: true, no_deadline: true
+        zone: true, do_on: true, no_deadline: true, context: true
       )
       ensure_no_args!
       title = required_option!(options[:title], "--title/-t")
@@ -634,6 +658,7 @@ module Todos
       task[:priority] = options[:priority] if options.key?(:priority)
       task[:priority_reason] = options[:priority_reason] if options.key?(:priority_reason)
       task[:estimated_minutes] = options[:estimate] if options.key?(:estimate)
+      task[:contexts] = context_names(options) if options.key?(:contexts)
       add_plan_fields!(task, options)
 
       if options[:user]
@@ -670,7 +695,7 @@ module Todos
         @args,
         user: true, title: true, project: true, description: true, due: true, due_time: true,
         estimate: true, source_url: true, schema: true, fields: true, notes: true, priority: true, priority_reason: true,
-        zone: true, do_on: true, no_deadline: true
+        zone: true, do_on: true, no_deadline: true, context: true
       )
       ensure_no_args!
 
@@ -683,6 +708,7 @@ module Todos
       task[:estimated_minutes] = options[:estimate] if options.key?(:estimate)
       task[:source_url] = options[:source_url] if options.key?(:source_url)
       task[:fields_schema] = parse_schema(options[:schema]) if options.key?(:schema)
+      task[:contexts] = context_names(options) if options.key?(:contexts)
       task[:priority] = options[:priority] if options.key?(:priority)
       task[:priority_reason] = options[:priority_reason] if options.key?(:priority_reason)
       add_plan_fields!(task, options)
@@ -1121,6 +1147,9 @@ module Todos
       parser.on("--days N", "Link: days until it ends (1 to 30, 14 when left out)") { |value| options[:days] = link_days(value) } if allowed[:days]
       parser.on("--at DATE", "Link: when it ends (YYYY-MM-DD or an ISO 8601 time)") { |value| options[:at] = link_time(value) } if allowed[:at]
       parser.on("--star") { options[:star] = true } if allowed[:star]
+      parser.on("--context NAME", "My GTD context on the to-do: office, phone, errands, bike, home. Repeatable, or a comma list; \"\" clears") do |value|
+        (options[:contexts] ||= []).concat(value.split(","))
+      end if allowed[:context]
       parser.on("--off") { options[:off] = true } if allowed[:off]
       parser.on("--allow-external") { options[:allow_external] = true } if allowed[:allow_external]
       parser.parse!(args)
@@ -1203,6 +1232,16 @@ module Todos
       return level if PRIORITIES.include?(level)
 
       raise Error.new("--priority must be urgent, high, normal, or low", code: "INVALID_ARGUMENT")
+    end
+
+    # The --context names: normalized (lowercase, single-dash, unique),
+    # blanks dropped. --context "" (or all blanks) is the empty list, which
+    # clears the set on tasks update.
+    def context_names(options)
+      return nil unless options.key?(:contexts)
+
+      Array(options[:contexts]).map { |name| name.to_s.strip.downcase.gsub(/\s+/, "-") }
+        .reject { |name| name.empty? }.uniq
     end
 
     # A day (YYYY-MM-DD) for --do-on, or "" to clear it.

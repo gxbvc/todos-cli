@@ -152,6 +152,15 @@ ones that matter get lost. A real deadline is `--due`. Importance is
 `--priority`. With no deadline and no day the person chose, the todo waits in
 Needs a date, where the person picks a day.
 
+### Context (`--context`)
+
+Set `--context` when where, or with what, the person must be is clear from the
+work itself: a desk with a big screen and a security key is `office`; a tap on
+the phone is `phone`; a voice-only answer on a ride is `bike`. The context is
+personal: only the person sees it, and they filter Today with it. List a
+person's contexts with `todos-cli contexts` — the descriptions say what each
+one means. Never invent a name: an unknown context is refused, not created.
+
 ### Response fields
 
 One instruction field per value you need back. No fields when marking done is

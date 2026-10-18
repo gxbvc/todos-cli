@@ -95,6 +95,20 @@ todos-cli invites accept project-4 --area 3
 todos-cli invites accept area-2
 ```
 
+### Contexts
+
+```bash
+todos-cli contexts
+todos-cli tasks update 99 --context office --context bike
+todos-cli tasks update 99 --context ""   # clears my contexts on the to-do
+```
+
+A context is where you are, or what you need with you, when you do a to-do.
+`office` is at a desk with the big screen and the security key, `phone` is a
+tap on the phone, `errands` is out in town, `bike` is voice only on a ride,
+`home` is at home, no desk. They are yours only. Make and describe them on
+Settings. Filtering Today by a context is the web chip row at the top.
+
 Without `--user`, `board` reads the authenticated user's own board, and
 `projects list` reads your own projects (`GET /projects.json`: members, your
 `area_id`, and `external`). `areas list` requires `--user`; it and
@@ -143,7 +157,8 @@ stderr when there are any.
 
 ```bash
 todos-cli tasks list
-todos-cli tasks list --user andy@example.com --project 7 --status open
+ todos-cli tasks list --user andy@example.com --project 7 --status open
+todos-cli tasks list --context office,bike
 todos-cli tasks get 99
 ```
 
@@ -215,7 +230,10 @@ member route (`POST /tasks.json`): a task in one of your projects, for you or
 for `--assignee EMAIL` (an active member of that project, or someone you
 invited to it or its area who has not joined yet: the task waits on the invite,
 `data.assignee` is null and `data.waiting_for_invite.id` names the invite, and
-it lands on them when they accept). `--star` stars it.
+it lands on them when they accept). `--star` stars it. `--context NAME`
+(repeat it, or a comma list) tags the to-do with a GTD context of yours —
+where, or with what, it gets done: office, phone, errands, bike, home.
+Contexts are personal: only you see them. `todos-cli contexts` lists yours.
 `--estimate` and `--source-url` need `--user`.
 
 Descriptions are markdown, the one format todo stores and the same field the

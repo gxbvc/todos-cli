@@ -21,12 +21,13 @@ todos-cli projects create -t TITLE [--area ID]
 todos-cli projects invite <id> --email EMAIL
 todos-cli invites list
 todos-cli invites accept <id> [--area ID]
-todos-cli tasks list [--user <id|email>] [--project ID] [--status open|submitted|approved|canceled]
+todos-cli contexts
+todos-cli tasks list [--user <id|email>] [--project ID] [--status open|submitted|approved|canceled] [--context NAME,NAME]
 todos-cli tasks get|show <id> [--user <id|email>]
 todos-cli tasks check -t TITLE [--description MARKDOWN|@file] [--schema JSON|@file]
-todos-cli tasks create -t TITLE --project ID [--assignee EMAIL] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--schema JSON|@file] [--star]
-todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--estimate N] [--source-url URL] [--schema JSON|@file] [--star]
-todos-cli tasks update <id> --user <id|email> [--title TITLE] [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--estimate N] [--source-url URL] [--schema JSON|@file] [--field key=value]
+todos-cli tasks create -t TITLE --project ID [--assignee EMAIL] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--context NAME,NAME] [--schema JSON|@file] [--star]
+todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--estimate N] [--source-url URL] [--context NAME,NAME] [--schema JSON|@file] [--star]
+todos-cli tasks update <id> --user <id|email> [--title TITLE] [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--estimate N] [--source-url URL] [--context NAME,NAME] [--schema JSON|@file] [--field key=value]
 todos-cli tasks destroy <id> --user <id|email>
 todos-cli tasks approve <id> [--user <id|email>]
 todos-cli tasks send-back <id> --note TEXT
@@ -72,6 +73,7 @@ The server scores every task on 7 checks (Jev). `tasks create`, `tasks get`/`sho
 - My board (`board` and `tasks list` without `--user`) leaves canceled to-dos off. They are in my logbook: `logbook` lists what left my board, newest first (`kind` logged with `logged_at`, or canceled with `canceled_at` and `declined`), and `tasks list --status canceled` without `--user` reads the canceled ones from there (every week). `logbook` is one week (the 7 days before `--before DATE`, default up to today); stderr names the `--before` for the week before, and `--all` reads every week. With `--user`, the admin board still has every status.
 - Due: `--due YYYY-MM-DD` is the day; `--due-time HH:MM` is a time in 24-hour Central time (America/Chicago). On create, `--due-time` needs `--due`. On update it can come alone, a new `--due` keeps the time, `--due-time ""` clears the time, and `--due ""` clears both. Never put a time in `--due` (refused). Task JSON has `due_at` (ISO 8601, Central offset) or null.
 - Plan day: `--do-on DATE` (and `tasks plan --do-on`) puts a to-do in Today on that day. Set it only when the person chose that day (they said "I will do it Friday"). Never set it to today to get their attention: Today then fills with to-dos nobody planned (plan 26 found 45 of 48). For a real deadline use `--due`; for importance use `--priority`.
+- Contexts (todo plan 42): `--context NAME` (repeat it, or a comma list) on `tasks create` and `tasks update` tags the to-do with a GTD context of mine — where, or with what, it gets done. On update it REPLACES my set; `--context ""` clears it. Contexts are personal: only I see them; task rows carry `contexts` (my names). `todos-cli contexts` lists mine (name, description, position); they are made on /settings. Set one when where or with what the person must be is clear: desk with the big screen and security key: `office`; a phone tap: `phone`; a voice-only answer on a ride: `bike`. An unknown name is `HTTP_422` (no auto-create, so a typo never makes a new one). `tasks list --context office,bike` keeps only rows carrying any of those names.
 - `approve` and `star` use my own route without `--user` (I am the reviewer, or for `star` the assignee) and the admin route with it. `send-back` is the reviewer's route only; the admin equivalent is `reopen --user --note`.
 - Submit uses the admin route with `--user`, otherwise self; `reopen --note` requires `--user`.
 - Blocked: `block <id> --reason TEXT` is the assignee's route only (`PATCH /tasks/:id/block.json`): when I cannot do an open to-do someone else gave me without something from them, it goes to their court (status `blocked`, never canceled) with what I need, and they get it in their email batch. `--reason` is required; there is no `--user`; on a to-do I wrote for myself, use `cancel` (`HTTP_422`). `unblock <id> [--note TEXT]` is the asker's (`PATCH /tasks/:id/unblock.json`): after they add what was needed (an `update`, or the note), it goes back to the assignee, open; the note is posted as a comment and goes in the assignee's email. `--status blocked` filters `tasks list`. Decline is gone.

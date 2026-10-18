@@ -1245,3 +1245,73 @@ end
     assert_includes output["data"]["usage"], "webhook-signature"
   end
 end
+
+# Todo plan 42: GTD contexts. --context on tasks create and update (a repeat
+# or a comma list; "" clears), todos-cli contexts lists them, tasks list
+# --context filters rows by my own names.
+class TodosCliContextsTest < Minitest::Test
+  BOARD = {
+    areas: [
+      {
+        id: 1, title: "Area", position: 0, active: true,
+        projects: [
+          { id: 3, title: "Project", tasks: [
+            { id: 11, title: "Marked", status: "open", project_id: 3, contexts: %w[office] },
+            { id: 12, title: "Plain", status: "open", project_id: 3, contexts: [] }
+          ] }
+        ]
+      }
+    ]
+  }.freeze
+
+  def test_tasks_create_and_update_send_contexts
+    server = StubServer.new({})
+    output, stderr, status = run_cli("tasks", "create", "-t", "T", "--project", "3", "--context", "office", "--context", "phone", server: server)
+    assert_equal 0, status.exitstatus, stderr
+    assert_equal %w[office phone], json_body(server.requests.pop)["task"]["contexts"]
+
+    server = StubServer.new({})
+    run_cli("tasks", "update", "11", "--context", "office, bike", server: server)
+    assert_equal %w[office bike], json_body(server.requests.pop)["task"]["contexts"]
+
+    # --context "" clears the set: an empty array, still sent.
+    server = StubServer.new({})
+    run_cli("tasks", "update", "11", "--context", "", server: server)
+    body = json_body(server.requests.pop)
+    assert_equal [], body["task"]["contexts"]
+  end
+
+  def test_tasks_list_filters_by_my_context_names
+    %w[office office,bike].each do |names|
+      server = StubServer.new(body: JSON.generate(BOARD))
+      output, = run_cli("tasks", "list", "--context", names, server: server)
+      assert_equal [ 11 ], output["data"].map { |task| task["id"] }, names
+    end
+
+    server = StubServer.new(body: JSON.generate(BOARD))
+    output, = run_cli("tasks", "list", "--context", "bike", server: server)
+    assert_empty output["data"]
+  end
+
+  def test_contexts_lists_mine
+    server = StubServer.new(body: JSON.generate(contexts: [
+      { id: 1, name: "office", description: "At a desk", position: 0 }
+    ]))
+    output, = run_cli("contexts", server: server)
+    assert_equal true, output["ok"]
+    assert_equal "office", output["data"].first["name"]
+    assert_equal "At a desk", output["data"].first["description"]
+    request = server.requests.pop
+    assert_equal "GET", request[:method]
+    assert_equal "/contexts.json", request[:target]
+  end
+
+  def test_usage_says_what_each_starting_context_means
+    server = StubServer.new
+    output, = run_cli("help", server: server)
+    usage = output["data"]["usage"]
+    assert_includes usage, "todos-cli contexts"
+    assert_includes usage, "--context"
+    assert_includes usage, "voice-only answer: bike"
+  end
+end
