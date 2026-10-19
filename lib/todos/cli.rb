@@ -31,7 +31,7 @@ module Todos
         todos-cli invites list
         todos-cli invites accept <id> [--area ID]
         todos-cli contexts
-        todos-cli tasks list [--user <id|email>] [--project ID] [--status STATUS] [--context NAME,NAME]
+        todos-cli tasks list [--user <id|email>] [--project ID] [--status STATUS] [--context NAME,NAME] [--sort priority]
         todos-cli tasks get|show <id> [--user <id|email>]
         todos-cli tasks check -t TITLE [--description MARKDOWN|@file] [--schema JSON|@file]
         todos-cli tasks create -t TITLE --project ID [--assignee EMAIL] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--context NAME,NAME] [--schema JSON|@file] [--star] [--allow-external]
@@ -90,6 +90,9 @@ module Todos
       Leave --schema out when marking done is enough.
       My board leaves canceled to-dos off: they are in the logbook (todos-cli logbook), and
       tasks list --status canceled reads them from there (every week).
+      --sort priority (tasks list) sorts the flat list: urgent, high, normal, low, then due date
+      (none last; a due time breaks ties within a day), then position, then id. Without it the
+      list keeps the board's order (per project).
       logbook gives one week: the 7 days before --before DATE (default: up to today). stderr names
       the --before for the week before; --all reads every week.
       --due-time HH:MM is 24-hour Central time and goes with --due. On update, --due-time "" clears the
@@ -536,10 +539,13 @@ module Todos
     end
 
     def tasks_list
-      options = parse_options(@args, user: true, project: true, status: true, context: true)
+      options = parse_options(@args, user: true, project: true, status: true, context: true, sort: true)
       ensure_no_args!
       if options[:status] && !STATUSES.include?(options[:status])
         raise Error.new("Status must be one of: #{STATUSES.join(", ")}", code: "INVALID_ARGUMENT")
+      end
+      if options[:sort] && options[:sort] != "priority"
+        raise Error.new("--sort must be priority", code: "INVALID_ARGUMENT")
       end
       # My board leaves canceled to-dos off; they are in my logbook. The
       # admin's --user board still has them.
@@ -559,7 +565,30 @@ module Todos
       if (names = context_names(options))
         tasks.select! { |task| (Array(task["contexts"]) & names).any? }
       end
+      # --sort priority (todo plan 43): urgent, high, normal, low, then due
+      # date (none last; a due time breaks ties within a day), then
+      # position, then id. Sorted here, not on the server: the board tree
+      # is per project, and this list spans projects.
+      tasks = sort_by_priority(tasks) if options[:sort]
       tasks
+    end
+
+    PRIORITY_RANK = { "urgent" => 0, "high" => 1, "normal" => 2, "low" => 3 }.freeze
+
+    def sort_by_priority(tasks)
+      tasks.sort_by do |task|
+        due = task["due_date"].to_s
+        due_at = task["due_at"].to_s
+        [
+          PRIORITY_RANK.fetch(task["priority"], 2),
+          due.empty? ? 1 : 0,
+          due.empty? ? "9999-12-31" : due,
+          due_at.empty? ? 1 : 0,
+          due_at,
+          task["position"].to_i,
+          task["id"].to_i
+        ]
+      end
     end
 
     # What left my board, newest first (GET /logbook.json): to-dos I logged
@@ -1156,6 +1185,7 @@ module Todos
       parser.on("--days N", "Link: days until it ends (1 to 30, 14 when left out)") { |value| options[:days] = link_days(value) } if allowed[:days]
       parser.on("--at DATE", "Link: when it ends (YYYY-MM-DD or an ISO 8601 time)") { |value| options[:at] = link_time(value) } if allowed[:at]
       parser.on("--star") { options[:star] = true } if allowed[:star]
+      parser.on("--sort VALUE", "tasks list: priority sorts urgent, high, normal, low, then due date") { |value| options[:sort] = value } if allowed[:sort]
       parser.on("--context NAME", "My GTD context on the to-do: office, phone, errands, bike, home. Repeatable, or a comma list; \"\" clears") do |value|
         (options[:contexts] ||= []).concat(value.split(","))
       end if allowed[:context]

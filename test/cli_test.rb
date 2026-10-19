@@ -1244,6 +1244,39 @@ end
     assert_includes output["data"]["usage"], "X-Todo-Signature"
     assert_includes output["data"]["usage"], "webhook-signature"
   end
+  # --sort priority (todo plan 43): urgent, high, normal, low, then due
+  # date (none last; a due time breaks ties within a day), then position,
+  # then id. Sorted locally over the flattened board.
+  def test_tasks_list_sort_priority
+    board = { user: { id: 7 }, areas: [{ id: 1, title: "Work", projects: [
+      { id: 3, title: "Launch", tasks: [
+        { id: 9, project_id: 3, title: "low", status: "open", priority: "low" },
+        { id: 10, project_id: 3, title: "urgent late", status: "open", priority: "urgent", due_date: "2026-11-30" },
+        { id: 11, project_id: 3, title: "high", status: "open", priority: "high" },
+        { id: 12, project_id: 3, title: "undated b", status: "open", position: 4 },
+        { id: 13, project_id: 3, title: "undated a", status: "open", position: 5 },
+        { id: 14, project_id: 3, title: "normal due", status: "open", due_date: "2026-10-22" },
+        { id: 15, project_id: 3, title: "urgent timed", status: "open", priority: "urgent", due_date: "2026-10-22", due_at: "2026-10-22T09:00:00-05:00" },
+        { id: 16, project_id: 3, title: "urgent day", status: "open", priority: "urgent", due_date: "2026-10-22" }
+      ] }
+    ] }] }
+
+    server = StubServer.new(body: JSON.generate(board))
+    output, = run_cli("tasks", "list", "--sort", "priority", server: server)
+    assert_equal true, output["ok"]
+    expected = [ "urgent timed", "urgent day", "urgent late", "high", "normal due", "undated b", "undated a", "low" ]
+    assert_equal expected, output["data"].map { |task| task["title"] }
+    assert_equal "/tasks.json", server.requests.pop[:target].split("?").first
+  end
+
+  def test_tasks_list_sort_unknown_value_is_refused
+    server = StubServer.new
+    output, _stderr, status = run_cli("tasks", "list", "--sort", "due_date", server: server)
+    assert_equal 1, status.exitstatus
+    assert_equal "INVALID_ARGUMENT", output["code"]
+    assert server.requests.empty?, "no request should be sent"
+  end
+
 end
 
 # Todo plan 42: GTD contexts. --context on tasks create and update (a repeat
@@ -1335,3 +1368,4 @@ class TodosCliContextsTest < Minitest::Test
     assert_empty requests_of(server)
   end
 end
+

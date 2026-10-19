@@ -159,13 +159,16 @@ stderr when there are any.
 todos-cli tasks list
 todos-cli tasks list --user andy@example.com --project 7 --status open
 todos-cli tasks list --context office,bike
+todos-cli tasks list --sort priority
 todos-cli tasks get 99
 ```
 
 Task lists are read from a board and filtered locally. Valid statuses are
 `open`, `submitted`, `approved`, and `canceled`. `tasks get` always uses the
 visible-task route `/tasks/:id.json`; the optional `--user` does not change
-that bound route.
+that bound route. `--sort priority` sorts the flat list: urgent, high,
+normal, low, then due date (none last; a due time breaks ties within a day),
+then position, then id. Without it the list keeps the board's order.
 
 ### Events
 
