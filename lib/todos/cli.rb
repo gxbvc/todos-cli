@@ -709,8 +709,8 @@ module Todos
       # The draft email (plan 44): to and subject are required, and the
       # server refuses without them.
       if (email = email_fields(options))
-        raise Error.new("--email-to is required on an email to-do", code: "INVALID_ARGUMENT") unless email["to"].present?
-        raise Error.new("--email-subject is required on an email to-do", code: "INVALID_ARGUMENT") unless email["subject"].present?
+        raise Error.new("--email-to is required on an email to-do", code: "INVALID_ARGUMENT") if email["to"].to_s.strip.empty?
+        raise Error.new("--email-subject is required on an email to-do", code: "INVALID_ARGUMENT") if email["subject"].to_s.strip.empty?
 
         task[:email] = email
       end
@@ -1066,12 +1066,11 @@ module Todos
 
     # A small line-based unified diff (no context folding): the whole text
     # with one @@ header, lines from the old text prefixed "-", from the new
-    # "+", common lines " ".
+    # "+", common lines " ". Every line ends with a newline, so blocks read
+    # one line per row.
     def unified_diff(old_text, new_text)
-      a = old_text.lines
-      b = new_text.lines
-      a += [""] if a.empty? && !b.empty?
-      b += [""] if b.empty? && !a.empty?
+      a = old_text.lines.map(&:chomp)
+      b = new_text.lines.map(&:chomp)
 
       # Longest common subsequence table.
       lcs = Array.new(a.length + 1) { Array.new(b.length + 1, 0) }
@@ -1089,7 +1088,7 @@ module Todos
           lines << " #{a[i]}"
           i += 1
           j += 1
-        elsif j < b.length && (i >= a.length || lcs[i + 1][j] >= lcs[i][j + 1])
+        elsif j < b.length && (i >= a.length || lcs[i + 1][j] > lcs[i][j + 1])
           lines << "+#{b[j]}"
           j += 1
         else
@@ -1097,7 +1096,7 @@ module Todos
           i += 1
         end
       end
-      lines.join
+      lines.join("\n") << "\n"
     end
 
     # A no-sign-in link for the person doing the to-do (todo plan 36,

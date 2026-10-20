@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require_relative "test_helper"
+$LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
+require "todos/cli"
 
 class TodosCliTest < Minitest::Test
   def test_mutating_commands_use_bound_routes_and_bodies
@@ -1367,8 +1369,6 @@ class TodosCliContextsTest < Minitest::Test
     assert_equal "INVALID_ARGUMENT", output["code"]
     assert_empty requests_of(server)
   end
-end
-
 
   # ── Email to-dos (todo plan 44) ──────────────────────────────────────────
 
@@ -1444,7 +1444,9 @@ end
     assert_includes stderr, "+Hello edited"
     assert_includes stderr, "+Person added a line"
     # Unchanged fields get no block.
-    assert_not_includes stderr, "to:"
+    assert_includes stderr, "subject:" # the changed field
+    assert_includes stderr, " Draft body\n" # the common line, prefixed with a space
+    refute_includes(stderr, "to:")
 
     request = server.requests.pop
     assert_equal "GET", request[:method]
@@ -1480,6 +1482,12 @@ end
   end
 
   def test_tasks_email_diff_handles_a_new_field_and_a_cleared_field
-    diff = Todos::CLI.new([], client: nil).unified_diff("", "New line\n")
-    assert_equal "@@ -1,1 +1,2 @@\n+\n+New line\n", diff
+    cli = Todos::CLI.new([], client: nil)
+    diff = ->(a, b) { cli.send(:unified_diff, a, b) }
+    assert_equal "@@ -1,0 +1,1 @@\n+New line\n", diff.call("", "New line\n")
+    # Every line ends with a newline, so blocks read one line per row.
+    assert_equal "@@ -1,1 +1,1 @@\n-Hello\n+Hello edited\n", diff.call("Hello\n", "Hello edited\n")
+    assert_equal "@@ -1,2 +1,1 @@\n-Line one\n-Line two\n+All new text\n", diff.call("Line one\nLine two\n", "All new text\n")
   end
+end
+
