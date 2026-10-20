@@ -393,6 +393,45 @@ and secrets are never kept there. Anyone who can open the to-do can read them.
 it posts a comment as you after the rest of the change, and prints
 `--notes is now a comment. Use: todos-cli tasks comment <id> "text"` on stderr.
 
+### Email to-dos
+
+```bash
+todos-cli tasks create --user andy@example.com \
+  -t "Email the vendor about invoice 1042" \
+  --email-to billing@vendor.test \
+  --email-subject "Invoice 1042 correction" \
+  --email-body @email.txt \
+  --email-from "your chris@gxb.vc address"
+todos-cli tasks update 99 --email-subject "Invoice 1042 (corrected)"
+todos-cli tasks email 99
+```
+
+One to-do can carry exactly one email the person sends from their own mail
+client; the app never sends it (todo plan 44). The draft rides in the
+`--email-*` flags: `--email-to` and `--email-subject` are required, and
+`--email-body` is plain text or `@file.txt` (no markdown). `--email-from` is
+a hint about which address to send from. Title is still the next action; do
+not also paste the draft into the description.
+
+Every email to-do gets a built-in required radio `email_outcome` (Sent /
+Not a fit / Skip) that Done waits for, so the person says what happened. Do
+not add your own outcome field.
+
+The card shows the draft with **Open in Outlook**, **Open in Gmail**, and
+**Open in my mail app** buttons (built from the current text; a link past a
+safe length says "copy the body instead") and Copy buttons for To, Subject,
+and Body. The person can edit the draft before sending. Read their changes:
+
+```bash
+todos-cli tasks email 99 --json
+```
+
+Without `--json`, `tasks email` prints the agent's draft against the current
+text as a unified diff. With `--json`, it returns the whole reply:
+`{email, original, revisions}`, where each revision names who changed it,
+when, and how (`via` web, api, or link). The email text never reaches quality
+scoring, search, events, webhooks, or mail.
+
 ### Webhooks
 
 ```bash

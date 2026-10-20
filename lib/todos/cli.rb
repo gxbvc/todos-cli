@@ -36,6 +36,8 @@ module Todos
         todos-cli tasks check -t TITLE [--description MARKDOWN|@file] [--schema JSON|@file]
         todos-cli tasks create -t TITLE --project ID [--assignee EMAIL] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--context NAME,NAME] [--schema JSON|@file] [--star] [--allow-external]
         todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--source-url URL] [--schema JSON|@file] [--star]
+        todos-cli tasks create/update ... [--email-to ADDRESSES] [--email-cc ADDRESSES] [--email-bcc ADDRESSES] [--email-subject SUBJECT] [--email-body TEXT|@file] [--email-from HINT]
+        todos-cli tasks email <id> [--json]
         todos-cli tasks update <id> [--user <id|email>] [--title TITLE] [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--source-url URL] [--context NAME,NAME] [--schema JSON|@file] [--field key=value]
         todos-cli tasks destroy <id> --user <id|email>
         todos-cli tasks submit <id> [--user <id|email>] [--field key=value]
@@ -126,6 +128,17 @@ module Todos
       url}; the url checks access and redirects to a short-lived link.
       tasks versions <id> lists the old copies of the title, description, and fields, newest first:
       {id, created_at, by, changes: {description: [old, new]}}. Never answers.
+      Email to-dos (todo plan 44): one to-do can carry exactly one email the person sends from
+      their own mail client (the app never sends it). Give the draft with --email-to,
+      --email-cc, --email-bcc, --email-subject, --email-body (text or @file), and --email-from
+      (a hint about which address to send from). --email-to and --email-subject are required
+      (the server refuses without them). Every email to-do gets a built-in required radio
+      email_outcome (Sent / Not a fit / Skip) the person answers with Done, so do not add your
+      own. The card shows the draft with Open in Outlook, Open in Gmail, and Copy buttons; the
+      person edits it there and their changes never go back to you unless you read them:
+      tasks email <id> prints the agent's draft against the current text as a unified diff,
+      --json returns the whole reply {email, original, revisions} (who, when, via, each version).
+      The email text never reaches quality checks, search, events, webhooks, or mail.
       --notes on tasks update and tasks respond still works for one release: it posts a comment.
       tasks link <id> [--days N] makes a no-sign-in link (todo plan 36) for the person doing the to-do:
       they open it, answer, upload files, and press Done with no account. --days is 1 to 30 (14 when
@@ -529,12 +542,13 @@ module Todos
       when "comment" then tasks_comment
       when "comments" then tasks_comments
       when "versions" then tasks_versions
+      when "email" then tasks_email
       when "link" then tasks_link
       when "links" then tasks_links
       when "unlink" then tasks_unlink
       when "link-expire" then tasks_link_expire
       else
-        fail_usage!("Usage: todos-cli tasks <list|get|show|check|create|update|destroy|approve|send-back|star|plan|submit|reopen|cancel|block|unblock|remind|respond|comment|comments|versions|link|links|unlink|link-expire>")
+        fail_usage!("Usage: todos-cli tasks <list|get|show|check|create|update|destroy|approve|send-back|star|plan|submit|reopen|cancel|block|unblock|remind|respond|comment|comments|versions|email|link|links|unlink|link-expire>")
       end
     end
 
@@ -673,7 +687,7 @@ module Todos
         @args,
         user: true, title: true, project: true, assignee: true, description: true, due: true, due_time: true, estimate: true,
         source_url: true, schema: true, star: true, allow_external: true, priority: true, priority_reason: true,
-        zone: true, do_on: true, no_deadline: true, context: true
+        zone: true, do_on: true, no_deadline: true, context: true, email: true
       )
       ensure_no_args!
       title = required_option!(options[:title], "--title/-t")
@@ -692,6 +706,14 @@ module Todos
       task[:estimated_minutes] = options[:estimate] if options.key?(:estimate)
       task[:contexts] = context_names(options) if options.key?(:contexts)
       add_plan_fields!(task, options)
+      # The draft email (plan 44): to and subject are required, and the
+      # server refuses without them.
+      if (email = email_fields(options))
+        raise Error.new("--email-to is required on an email to-do", code: "INVALID_ARGUMENT") unless email["to"].present?
+        raise Error.new("--email-subject is required on an email to-do", code: "INVALID_ARGUMENT") unless email["subject"].present?
+
+        task[:email] = email
+      end
 
       if options[:user]
         if options.key?(:assignee)
@@ -730,7 +752,7 @@ module Todos
         @args,
         user: true, title: true, project: true, description: true, due: true, due_time: true,
         estimate: true, source_url: true, schema: true, fields: true, notes: true, priority: true, priority_reason: true,
-        zone: true, do_on: true, no_deadline: true, context: true
+        zone: true, do_on: true, no_deadline: true, context: true, email: true
       )
       ensure_no_args!
 
@@ -747,6 +769,10 @@ module Todos
       task[:priority] = options[:priority] if options.key?(:priority)
       task[:priority_reason] = options[:priority_reason] if options.key?(:priority_reason)
       add_plan_fields!(task, options)
+      # An edit of the draft email (plan 44): only the flags given change.
+      if (email = email_fields(options))
+        task[:email] = email
+      end
 
       body = {}
       body[:task] = task unless task.empty?
@@ -1000,6 +1026,80 @@ module Todos
       versions
     end
 
+    # The email a to-do carries (todo plan 44), from GET /tasks/:id/email.json:
+    # the current email, the original draft, and the revisions. Without
+    # --json, prints the agent's draft against the current text as a unified
+    # diff, so an agent can learn what the person changed before it sends
+    # (or to see why it did not send).
+    def tasks_email
+      id = required_positional!("task id")
+      options = parse_options(@args, json: true)
+      ensure_no_args!
+      body = request(:get, "/tasks/#{id}/email.json")
+      raise Error.new("Response did not include email", code: "INVALID_RESPONSE") unless body.is_a?(Hash)
+      return body if options[:json]
+
+      email, original = body["email"], body["original"]
+      raise Error.new("This to-do carries no email", code: "INVALID_ARGUMENT") unless email
+
+      print_email_diff(@err, original || {}, email)
+      body
+    end
+
+    EMAIL_DIFF_FIELDS = %w[subject to cc bcc body].freeze
+
+    # The agent's draft against what the person sends now, one block per
+    # changed field. A to-do that never changed says so on stderr.
+    def print_email_diff(err, original, current)
+      changed = EMAIL_DIFF_FIELDS.select { |field| original[field].to_s != current[field].to_s }
+      if changed.empty?
+        err.puts("Unchanged: the person is sending the draft as it was.")
+        return
+      end
+
+      changed.each do |field|
+        err.puts("--- #{field}: the agent's draft")
+        err.puts("+++ #{field}: what the person sends now")
+        err.puts(unified_diff(original[field].to_s, current[field].to_s))
+      end
+    end
+
+    # A small line-based unified diff (no context folding): the whole text
+    # with one @@ header, lines from the old text prefixed "-", from the new
+    # "+", common lines " ".
+    def unified_diff(old_text, new_text)
+      a = old_text.lines
+      b = new_text.lines
+      a += [""] if a.empty? && !b.empty?
+      b += [""] if b.empty? && !a.empty?
+
+      # Longest common subsequence table.
+      lcs = Array.new(a.length + 1) { Array.new(b.length + 1, 0) }
+      a.each_index.reverse_each do |i|
+        b.each_index.reverse_each do |j|
+          lcs[i][j] = a[i] == b[j] ? lcs[i + 1][j + 1] + 1 : [ lcs[i + 1][j], lcs[i][j + 1] ].max
+        end
+      end
+
+      lines = [ "@@ -1,#{a.length} +1,#{b.length} @@" ]
+      i = 0
+      j = 0
+      while i < a.length || j < b.length
+        if i < a.length && j < b.length && a[i] == b[j]
+          lines << " #{a[i]}"
+          i += 1
+          j += 1
+        elsif j < b.length && (i >= a.length || lcs[i + 1][j] >= lcs[i][j + 1])
+          lines << "+#{b[j]}"
+          j += 1
+        else
+          lines << "-#{a[i]}"
+          i += 1
+        end
+      end
+      lines.join
+    end
+
     # A no-sign-in link for the person doing the to-do (todo plan 36,
     # POST /tasks/:id/links.json). The asker's or the admin's. data.url has
     # the secret in its fragment and is in this reply only.
@@ -1165,6 +1265,15 @@ module Todos
       parser.on("--source-url URL") { |value| options[:source_url] = source_url(value) } if allowed[:source_url]
       parser.on("--schema JSON", "Fields as a JSON array, or @file.json: [{label, type, options?, required?}]. " \
                                   "Types: text textarea url password file voice recording radio checkboxes.") { |value| options[:schema] = value } if allowed[:schema]
+      if allowed[:email]
+        parser.on("--email-to ADDRESSES", "Email to-dos (plan 44): who the draft goes to; required") { |value| options[:email_to] = value.strip }
+        parser.on("--email-cc ADDRESSES") { |value| options[:email_cc] = value.strip }
+        parser.on("--email-bcc ADDRESSES") { |value| options[:email_bcc] = value.strip }
+        parser.on("--email-subject SUBJECT", "Required") { |value| options[:email_subject] = value }
+        parser.on("--email-body TEXT", "The email body, plain text, or @file.txt") { |value| options[:email_body] = email_body_text(value) }
+        parser.on("--email-from HINT", "A hint about which address to send from") { |value| options[:email_from] = value }
+      end
+      parser.on("--json", "Print the whole reply (tasks email: the revisions too)") { options[:json] = true } if allowed[:json]
       parser.on("--status STATUS") { |value| options[:status] = value } if allowed[:status]
       parser.on("--kind KIND") { |value| options[:kind] = value } if allowed[:kind]
       parser.on("--before DATE", "Logbook: the 7 days before this day (YYYY-MM-DD)") { |value| options[:before] = plan_date(value, "--before") } if allowed[:before]
@@ -1251,6 +1360,21 @@ module Todos
       raise Error.new("Comment file not found: #{path}", code: "INVALID_ARGUMENT") unless File.file?(path)
 
       File.read(path)
+    end
+
+    # The email body of an email to-do (plan 44): plain text, or @file.txt.
+    def email_body_text(value) = comment_text(value)
+
+    # task[email] from the --email-* flags (todo plan 44): only the flags
+    # given, so a partial update touches only those fields.
+    def email_fields(options)
+      pairs = {
+        to: :email_to, cc: :email_cc, bcc: :email_bcc,
+        subject: :email_subject, body: :email_body, from_hint: :email_from
+      }
+      return nil unless pairs.any? { |_, key| options.key?(key) }
+
+      pairs.filter_map { |field, key| [ field.to_s, options[key] ] if options.key?(key) }.to_h
     end
 
     # A day only. A time in --due would be dropped by the server without a

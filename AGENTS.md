@@ -43,6 +43,7 @@ todos-cli tasks respond <id> [--user <id|email>] --field key=value [--field key=
 todos-cli tasks comment <id> ["TEXT"|@file.md] [--file PATH ...]
 todos-cli tasks comments <id>
 todos-cli tasks versions <id>
+todos-cli tasks email <id> [--json]
 todos-cli events [--after ID] [--limit N]
 todos-cli webhooks list
 todos-cli webhooks create --url URL [--events TYPE,TYPE|*] [--description TEXT]
@@ -59,6 +60,8 @@ todos-cli webhooks delete|rotate|test|deliveries <id>
 Every task must be a next physical action. Rules and examples: `write-human-todos` skill.
 
 The server scores every task on 7 checks (Jev). `tasks create`, `tasks get`/`show`, and `tasks check` print the score and each check on stderr, with the hint for each fail. The JSON has the whole `quality` object. Run `tasks check` on a draft first. While the gate is on, a task for someone else that fails a blocking check is refused: exit 1, `code` `HTTP_422`, the failed checks on stderr, and `quality` in the envelope. There is no flag that skips the check.
+
+Email to-dos (todo plan 44): when the action is "send this email", use the email type, never a description draft. `tasks create`/`tasks update` take `--email-to` (required), `--email-subject` (required), `--email-cc`, `--email-bcc`, `--email-body` (plain text, or `@file.txt` — no markdown), and `--email-from` (a hint about which address to send from). The to-do carries exactly one email the person sends from their own mail client; the app never sends it. Every email to-do gets a built-in required radio `email_outcome` (Sent / Not a fit / Skip) Done waits for; do not add your own outcome field. The card shows Open in Outlook, Open in Gmail, and Copy buttons, and the person can edit the draft. Read what they changed with `tasks email <id>` (unified diff, the agent's draft against what they send now) or `--json` (the whole reply: email, original, revisions with who, when, via). The email text never reaches quality scoring, search, events, webhooks, or mail.
 
 ## Route rules
 

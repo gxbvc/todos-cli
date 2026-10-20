@@ -185,6 +185,27 @@ When the person may want to show something (a screenshot, a PDF), add a `file`
 field next to the text question, labeled like `Screenshots (optional)`. A text
 answer cannot hold files. They can also attach files to a comment.
 
+## Email to-dos
+
+When the action is "send this email", use the email type (`todos-cli tasks
+create --email-to ...`; the MCP tool's `email` input), never a draft in the
+description. One to-do carries exactly one email the person sends from their
+own mail client; the app never sends it.
+
+- Draft the whole email in the email fields: `--email-to` (required),
+  `--email-subject` (required), `--email-cc`, `--email-bcc`, `--email-body`
+  (plain text, or `@file.txt` — no markdown), and `--email-from` (a hint
+  about which address to send from).
+- The title is still the next action ("Email the vendor about invoice
+  1042"). Do not also paste the draft into the description.
+- Every email to-do gets a built-in required radio `email_outcome` (Sent /
+  Not a fit / Skip) that Done waits for. Do not add your own outcome field.
+- The card shows Open in Outlook, Open in Gmail, and Copy buttons built from
+  the current text, and the person can edit the draft. Read their changes
+  with `todos-cli tasks email <id>` (a unified diff of the agent's draft
+  against what they send now) or `--json` (every revision: who, when, via).
+- The email text never reaches quality scoring, search, events, or webhooks.
+
 ## Projects
 
 A short outcome title (`Website launch`, `Anthropic billing`). Describe the
@@ -217,7 +238,7 @@ A to-do for yourself is scored but never refused.
 | `physical_action` | yes | One act a watcher could see: send, pay, upload, call, sign, type a short answer, pick an option. |
 | `done_is_obvious` | yes | The doer knows for sure when they are finished. |
 | `strong_verb` | no | The title starts with a strong verb: Send, Pay, Reply, Confirm, Upload. |
-| `prework_done` | yes | You did the prep. For a send, the draft is in the description, in a code block they can copy. For a choice, the options are listed. |
+| `prework_done` | yes | You did the prep. For a send, the draft is in the email fields (email type) or the description, in a code block they can copy. For a choice, the options are listed. |
 | `self_contained` | yes | The assignee can start in 10 seconds from the card and their own accounts. |
 | `one_outcome` | yes | One sitting, one result. |
 | `human_gated` | no | Only a person can do it. |

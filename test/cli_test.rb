@@ -1369,3 +1369,117 @@ class TodosCliContextsTest < Minitest::Test
   end
 end
 
+
+  # ── Email to-dos (todo plan 44) ──────────────────────────────────────────
+
+  def test_tasks_create_sends_the_email_draft
+    server = StubServer.new(status: 201, body: JSON.generate(id: 33, status: "open"))
+    body_file = File.join(Dir.mktmpdir, "body.txt")
+    File.write(body_file, "Line one\nLine two\n")
+
+    output, stderr, status = run_cli(
+      "tasks", "create", "-t", "Email the vendor", "--project", "3",
+      "--email-to", "vendor@acme.test", "--email-cc", "cc@acme.test",
+      "--email-bcc", "watch@acme.test", "--email-subject", "Hello",
+      "--email-body", "@#{body_file}", "--email-from", "your own address",
+      server: server
+    )
+    assert_equal 0, status.exitstatus, stderr
+    assert_equal true, output["ok"]
+
+    request = server.requests.pop
+    assert_equal "POST", request[:method]
+    assert_equal "/tasks.json", request[:target]
+    email = json_body(request)["task"]["email"]
+    assert_equal "vendor@acme.test", email["to"]
+    assert_equal "cc@acme.test", email["cc"]
+    assert_equal "watch@acme.test", email["bcc"]
+    assert_equal "Hello", email["subject"]
+    assert_equal "Line one\nLine two\n", email["body"]
+    assert_equal "your own address", email["from_hint"]
+  end
+
+  def test_tasks_create_refuses_an_email_without_to_or_subject_before_any_request
+    [
+      ["--email-subject", "Only a subject"],
+      ["--email-to", "x@acme.test"]
+    ].each do |flag, value|
+      server = StubServer.new
+      output, _stderr, status = run_cli("tasks", "create", "-t", "T", "--project", "3", flag, value, server: server)
+      assert_equal 1, status.exitstatus
+      assert_equal "INVALID_ARGUMENT", output["code"]
+      assert_empty requests_of(server)
+    end
+  end
+
+  def test_tasks_update_sends_only_the_email_flags_given
+    server = StubServer.new({})
+    output, stderr, status = run_cli("tasks", "update", "11", "--email-subject", "New subject", server: server)
+    assert_equal 0, status.exitstatus, stderr
+    body = json_body(server.requests.pop)
+    assert_equal({ "subject" => "New subject" }, body["task"]["email"])
+
+    server = StubServer.new({})
+    run_cli("tasks", "update", "11", "--email-body", "", server: server)
+    body = json_body(server.requests.pop)
+    assert_equal({ "body" => "" }, body["task"]["email"])
+  end
+
+  def test_tasks_email_prints_a_unified_diff_of_the_draft_against_the_current_text
+    body = {
+      "task_id" => 44,
+      "email" => { "to" => "vendor@acme.test", "cc" => nil, "bcc" => nil, "subject" => "Hello edited", "body" => "Draft body\nPerson added a line\n" },
+      "original" => { "to" => "vendor@acme.test", "cc" => nil, "bcc" => nil, "subject" => "Hello", "body" => "Draft body\n" },
+      "revisions" => [ { "id" => 1, "by" => { "id" => 7, "name" => "Rita" }, "at" => "2026-10-20T12:00:00Z", "via" => "web", "subject" => "Hello edited" } ]
+    }
+    server = StubServer.new({ body: JSON.generate(body) })
+    output, stderr, status = run_cli("tasks", "email", "44", server: server)
+    assert_equal 0, status.exitstatus, stderr
+    assert_equal true, output["ok"]
+    assert_equal body, output["data"]
+
+    assert_includes stderr, "--- subject: the agent's draft"
+    assert_includes stderr, "+++ subject: what the person sends now"
+    assert_includes stderr, "-Hello"
+    assert_includes stderr, "+Hello edited"
+    assert_includes stderr, "+Person added a line"
+    # Unchanged fields get no block.
+    assert_not_includes stderr, "to:"
+
+    request = server.requests.pop
+    assert_equal "GET", request[:method]
+    assert_equal "/tasks/44/email.json", request[:target]
+  end
+
+  def test_tasks_email_says_when_the_draft_was_sent_as_it_was
+    body = {
+      "task_id" => 44,
+      "email" => { "to" => "v@x.test", "subject" => "Same", "body" => "Same body" },
+      "original" => { "to" => "v@x.test", "subject" => "Same", "body" => "Same body" },
+      "revisions" => []
+    }
+    server = StubServer.new({ body: JSON.generate(body) })
+    output, stderr, status = run_cli("tasks", "email", "44", server: server)
+    assert_equal 0, status.exitstatus, stderr
+    assert_includes stderr, "Unchanged"
+  end
+
+  def test_tasks_email_json_returns_the_whole_reply
+    body = { "task_id" => 44, "email" => { "subject" => "S" }, "original" => { "subject" => "S" }, "revisions" => [] }
+    server = StubServer.new({ body: JSON.generate(body) })
+    output, _stderr, status = run_cli("tasks", "email", "44", "--json", server: server)
+    assert_equal 0, status.exitstatus
+    assert_equal body, output["data"]
+  end
+
+  def test_tasks_email_refuses_a_to_do_without_an_email
+    server = StubServer.new({ body: JSON.generate({ task_id: 44, email: nil, original: nil, revisions: [] }) })
+    output, _stderr, status = run_cli("tasks", "email", "44", server: server)
+    assert_equal 1, status.exitstatus
+    assert_equal "INVALID_ARGUMENT", output["code"]
+  end
+
+  def test_tasks_email_diff_handles_a_new_field_and_a_cleared_field
+    diff = Todos::CLI.new([], client: nil).unified_diff("", "New line\n")
+    assert_equal "@@ -1,1 +1,2 @@\n+\n+New line\n", diff
+  end
