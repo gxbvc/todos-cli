@@ -1489,5 +1489,75 @@ class TodosCliContextsTest < Minitest::Test
     assert_equal "@@ -1,1 +1,1 @@\n-Hello\n+Hello edited\n", diff.call("Hello\n", "Hello edited\n")
     assert_equal "@@ -1,2 +1,1 @@\n-Line one\n-Line two\n+All new text\n", diff.call("Line one\nLine two\n", "All new text\n")
   end
-end
 
+  # ── todo plan 45a: kind, blocked-by ─────────────────────────────────
+  def test_tasks_create_and_update_send_kind
+    server = StubServer.new({})
+    output, stderr, status = run_cli("tasks", "create", "-t", "T", "--project", "3", "--assignee", "sam@example.com", "--kind", "bug", server: server)
+    assert_equal 0, status.exitstatus, stderr
+    assert_equal "bug", json_body(server.requests.pop)["task"]["kind"]
+
+    server = StubServer.new({})
+    run_cli("tasks", "create", "--user", "7", "-t", "T", "--kind", "feature", server: server)
+    assert_equal "feature", json_body(server.requests.pop)["task"]["kind"]
+
+    server = StubServer.new({})
+    run_cli("tasks", "update", "11", "--kind", "question", server: server)
+    assert_equal "question", json_body(server.requests.pop)["task"]["kind"]
+
+    # No --kind: no key at all.
+    server = StubServer.new({})
+    run_cli("tasks", "create", "-t", "T", "--project", "3", server: server)
+    refute json_body(server.requests.pop)["task"].key?("kind")
+
+    # --kind "" is the plain default.
+    server = StubServer.new({})
+    run_cli("tasks", "update", "11", "--kind", "", server: server)
+    assert_equal "task", json_body(server.requests.pop)["task"]["kind"]
+  end
+
+  def test_tasks_create_refuses_an_unknown_kind_before_any_request
+    server = StubServer.new
+    output, stderr, status = run_cli("tasks", "create", "-t", "T", "--project", "3", "--kind", "kindness", server: server)
+
+    assert_equal 1, status.exitstatus
+    assert_equal "INVALID_ARGUMENT", output["code"]
+    assert_includes stderr, "--kind must be"
+    assert_empty server.requests, "nothing was sent"
+  end
+
+  def test_tasks_update_blocked_by_sends_the_dependency_endpoint
+    server = StubServer.new({})
+    output, stderr, status = run_cli("tasks", "update", "11", "--blocked-by", "12,34", server: server)
+    assert_equal 0, status.exitstatus, stderr
+
+    requests = server.requests
+    dependencies = requests.pop
+    assert_equal "PATCH", dependencies[:method]
+    assert_equal "/tasks/11/dependencies.json", dependencies[:target]
+    assert_equal({ "blocked_by" => [ 12, 34 ] }, json_body(dependencies))
+    # No task edit alongside: the to-do itself was not patched.
+    assert_empty requests
+  end
+
+  def test_tasks_update_blocked_by_empty_clears_the_set
+    server = StubServer.new({})
+    run_cli("tasks", "update", "11", "--blocked-by", "", server: server)
+
+    assert_equal({ "blocked_by" => [] }, json_body(server.requests.pop))
+  end
+
+  def test_tasks_update_blocked_by_refuses_garbage_and_user_route_before_any_request
+    server = StubServer.new
+    output, _stderr, status = run_cli("tasks", "update", "11", "--blocked-by", "12,tree", server: server)
+    assert_equal 1, status.exitstatus
+    assert_equal "INVALID_ARGUMENT", output["code"]
+    assert_empty server.requests
+
+    server = StubServer.new
+    output, _stderr, status = run_cli("tasks", "update", "11", "--user", "7", "--blocked-by", "12", server: server)
+    assert_equal 1, status.exitstatus
+    assert_equal "INVALID_ARGUMENT", output["code"]
+    assert_empty server.requests
+  end
+end

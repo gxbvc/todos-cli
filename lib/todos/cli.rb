@@ -34,11 +34,11 @@ module Todos
         todos-cli tasks list [--user <id|email>] [--project ID] [--status STATUS] [--context NAME,NAME] [--sort priority]
         todos-cli tasks get|show <id> [--user <id|email>]
         todos-cli tasks check -t TITLE [--description MARKDOWN|@file] [--schema JSON|@file]
-        todos-cli tasks create -t TITLE --project ID [--assignee EMAIL] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--context NAME,NAME] [--schema JSON|@file] [--star] [--allow-external]
-        todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--source-url URL] [--schema JSON|@file] [--star]
+        todos-cli tasks create -t TITLE --project ID [--assignee EMAIL] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--kind KIND] [--context NAME,NAME] [--schema JSON|@file] [--star] [--allow-external]
+        todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--source-url URL] [--kind KIND] [--schema JSON|@file] [--star]
         todos-cli tasks create/update ... [--email-to ADDRESSES] [--email-cc ADDRESSES] [--email-bcc ADDRESSES] [--email-subject SUBJECT] [--email-body TEXT|@file] [--email-from HINT]
         todos-cli tasks email <id> [--json]
-        todos-cli tasks update <id> [--user <id|email>] [--title TITLE] [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--source-url URL] [--context NAME,NAME] [--schema JSON|@file] [--field key=value]
+        todos-cli tasks update <id> [--user <id|email>] [--title TITLE] [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--source-url URL] [--kind KIND] [--blocked-by IDS] [--context NAME,NAME] [--schema JSON|@file] [--field key=value]
         todos-cli tasks destroy <id> --user <id|email>
         todos-cli tasks submit <id> [--user <id|email>] [--field key=value]
         todos-cli tasks approve <id> [--user <id|email>]
@@ -110,6 +110,13 @@ module Todos
       --priority is urgent, high, normal (the default), or low. Each person can hold 3 open Urgent
       to-dos from one asker; past that, --priority-reason TEXT is required and goes in the history.
       --star (and tasks star) pins the to-do for you only: pins do not reorder anyone's list.
+      --kind (tasks create and tasks update) says what kind of work it is: task (the default, no
+      chip), bug, feature, or question; everything but task shows a chip on the card. Give a bug
+      or a feature request --kind bug or --kind feature; a client's how-do-I goes as --kind question.
+      --blocked-by (tasks update, no --user) says what this to-do waits on: a comma list of to-do
+      ids (--blocked-by 12,34), each one the caller can open. It REPLACES the set every time;
+      --blocked-by "" waits on nothing. The card shows "Blocked by #12 Title" links. Never a
+      status change: the to-do still shows on the doer's list until they say otherwise.
       --context (tasks create and tasks update) tags the to-do with a GTD context of yours —
       where, or with what, it gets done. Repeat --context or use a comma list. On update it
       REPLACES your set; --context "" clears it. Contexts are personal: only you see them.
@@ -687,7 +694,7 @@ module Todos
         @args,
         user: true, title: true, project: true, assignee: true, description: true, due: true, due_time: true, estimate: true,
         source_url: true, schema: true, star: true, allow_external: true, priority: true, priority_reason: true,
-        zone: true, do_on: true, no_deadline: true, context: true, email: true
+        zone: true, do_on: true, no_deadline: true, context: true, email: true, kind: true
       )
       ensure_no_args!
       title = required_option!(options[:title], "--title/-t")
@@ -695,6 +702,7 @@ module Todos
       task[:project_id] = options[:project] if options.key?(:project)
       task[:description] = options[:description] if options.key?(:description)
       task[:due_date] = options[:due] if options.key?(:due)
+      task[:kind] = task_kind!(options) if options.key?(:kind)
       if options[:due_time].to_s != ""
         raise Error.new("--due-time needs --due DATE", code: "INVALID_ARGUMENT") if options[:due].to_s.empty?
         task[:due_time] = options[:due_time]
@@ -752,7 +760,7 @@ module Todos
         @args,
         user: true, title: true, project: true, description: true, due: true, due_time: true,
         estimate: true, source_url: true, schema: true, fields: true, notes: true, priority: true, priority_reason: true,
-        zone: true, do_on: true, no_deadline: true, context: true, email: true
+        zone: true, do_on: true, no_deadline: true, context: true, email: true, kind: true, blocked_by: true
       )
       ensure_no_args!
 
@@ -768,6 +776,7 @@ module Todos
       task[:contexts] = context_names(options) if options.key?(:contexts)
       task[:priority] = options[:priority] if options.key?(:priority)
       task[:priority_reason] = options[:priority_reason] if options.key?(:priority_reason)
+      task[:kind] = task_kind!(options) if options.key?(:kind)
       add_plan_fields!(task, options)
       # An edit of the draft email (plan 44): only the flags given change.
       if (email = email_fields(options))
@@ -777,7 +786,7 @@ module Todos
       body = {}
       body[:task] = task unless task.empty?
       body[:response] = parse_fields(options[:fields]) if options[:fields]&.any?
-      raise Error.new("Nothing to update", code: "INVALID_ARGUMENT") if body.empty? && !options.key?(:notes)
+      raise Error.new("Nothing to update", code: "INVALID_ARGUMENT") if body.empty? && !options.key?(:notes) && !options.key?(:blocked_by)
       if options.key?(:source_url) && !options[:user]
         raise Error.new("--source-url needs --user (admin edit)", code: "INVALID_ARGUMENT")
       end
@@ -788,6 +797,15 @@ module Todos
       # Without --user: the asker's own edit on the member route.
       path = options[:user] ? "/users/#{resolve_user(options[:user])}/tasks/#{id}.json" : "/tasks/#{id}.json"
       result = note_external(request(:patch, path, body: body)) unless body.empty?
+      # What this to-do waits on (todo plan 45a): its own endpoint, which
+      # REPLACES the whole set. --blocked-by 12,34 waits on both;
+      # --blocked-by "" waits on nothing. The member route only: the asker
+      # or the doer, while the to-do is open or blocked.
+      if options.key?(:blocked_by)
+        raise Error.new("--blocked-by is for the member route; run it without --user", code: "INVALID_ARGUMENT") if options[:user]
+
+        result = request(:patch, "/tasks/#{id}/dependencies.json", body: { blocked_by: blocked_by_ids!(options[:blocked_by]) })
+      end
       notes_as_comment(id, options, result)
     end
 
@@ -850,6 +868,32 @@ module Todos
       task[:due_zone] = options[:zone] if options.key?(:zone)
       task[:do_on] = options[:do_on] if options.key?(:do_on)
       task[:no_deadline] = true if options[:no_deadline]
+    end
+
+    # What kind of work (todo plan 45a): a plain to-do is "task" and shows
+    # nothing on the card; bug, feature, and question show a chip.
+    def task_kind!(options)
+      return nil unless options.key?(:kind)
+
+      kind = options[:kind].to_s.strip.downcase
+      # --kind "" means the plain default.
+      kind = "task" if kind.empty?
+      unless %w[task bug feature question].include?(kind)
+        raise Error.new("--kind must be task, bug, feature, or question", code: "INVALID_ARGUMENT")
+      end
+
+      kind
+    end
+
+    # The ids --blocked-by waits on (todo plan 45a): a comma list of to-do
+    # ids; "" (or all blanks) is the empty list, which clears the set.
+    def blocked_by_ids!(value)
+      value.to_s.split(",").map do |raw|
+        id = raw.strip
+        raise Error.new("--blocked-by takes to-do ids, got #{raw.inspect}", code: "INVALID_ARGUMENT") unless id.match?(/\A\d+\z/)
+
+        id.to_i
+      end.uniq
     end
 
     def tasks_submit
@@ -1275,6 +1319,7 @@ module Todos
       parser.on("--json", "Print the whole reply (tasks email: the revisions too)") { options[:json] = true } if allowed[:json]
       parser.on("--status STATUS") { |value| options[:status] = value } if allowed[:status]
       parser.on("--kind KIND") { |value| options[:kind] = value } if allowed[:kind]
+      parser.on("--blocked-by IDS", "What this to-do waits on: to-do ids, comma list (replaces the set); \"\" clears") { |value| options[:blocked_by] = value } if allowed[:blocked_by]
       parser.on("--before DATE", "Logbook: the 7 days before this day (YYYY-MM-DD)") { |value| options[:before] = plan_date(value, "--before") } if allowed[:before]
       parser.on("--all", "Logbook: every week") { options[:all] = true } if allowed[:all]
       parser.on("--after ID", "Events: the changes after this event id") { |value| options[:after] = whole_number(value, "--after") } if allowed[:after]

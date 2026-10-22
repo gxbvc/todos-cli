@@ -224,6 +224,15 @@ Rewrite or split when:
 - "mark done" could mean more than one thing; or
 - the agent can do any part instead.
 
+## Agent work goes to GXBot
+
+Work an agent will do is a to-do assigned to GXBot (`gxbot@gxb.vc`): add
+`--assignee gxbot@gxb.vc` on `tasks create` in a project GXBot is a member of.
+Say what kind of work it is with `--kind`: a bug report is `--kind bug`, a
+feature request `--kind feature` (both show a chip on the card; a plain to-do
+needs nothing). If the to-do cannot start until another one is done, put
+`--blocked-by <id>` on `tasks update`.
+
 ## How todo.gxb.vc scores it
 
 The server asks Jev 7 yes/no questions about the title, the description, and

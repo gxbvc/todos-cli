@@ -95,6 +95,27 @@ todos-cli invites accept project-4 --area 3
 todos-cli invites accept area-2
 ```
 
+### Kind
+
+```bash
+todos-cli tasks create -t "The export button does nothing" --project 3 --assignee gxbot@gxb.vc --kind bug
+todos-cli tasks update 99 --kind feature
+```
+
+`--kind` says what kind of work it is: `task` (the default, no chip), `bug`,
+`feature`, or `question`; everything but `task` shows a chip on the card.
+
+### Dependencies
+
+```bash
+todos-cli tasks update 99 --blocked-by 12,34   # waits on both, replacing the set
+todos-cli tasks update 99 --blocked-by ""      # waits on nothing
+```
+
+`--blocked-by` takes to-do ids, every one you can open, and the card shows
+"Blocked by #12 Title" links. Member route only: the asker or the doer, while
+the to-do is open or blocked. It never changes a status.
+
 ### Contexts
 
 ```bash
