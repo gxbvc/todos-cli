@@ -185,6 +185,10 @@ When the person may want to show something (a screenshot, a PDF), add a `file`
 field next to the text question, labeled like `Screenshots (optional)`. A text
 answer cannot hold files. They can also attach files to a comment.
 
+For one quick decision on a to-do that already exists, ask it there instead of
+filing a new to-do: `todos-cli tasks ask <id> "Which carrier?" --option UPS
+--option FedEx` (todo plan 45b). The answer comes back as a comment.
+
 ## Email to-dos
 
 When the action is "send this email", use the email type (`todos-cli tasks

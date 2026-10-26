@@ -53,6 +53,10 @@ module Todos
         todos-cli tasks respond <id> [--user <id|email>] --field key=value [--field key=value]
         todos-cli tasks comment <id> ["TEXT"|@file.md] [--file PATH ...]
         todos-cli tasks comments <id>
+        todos-cli tasks ask <task_id> BODY|@file.md [--kind question|approval|unblock] [--option TEXT ...] [--allow-text] [--to EMAIL]
+        todos-cli questions list [--status open|answered|withdrawn] [--asked-by me]
+        todos-cli questions answer <question_id> (--choice TEXT | --text TEXT)
+        todos-cli questions withdraw <question_id>
         todos-cli tasks versions <id>
         todos-cli tasks link <id> [--days N]
         todos-cli tasks links <id>
@@ -135,6 +139,18 @@ module Todos
       url}; the url checks access and redirects to a short-lived link.
       tasks versions <id> lists the old copies of the title, description, and fields, newest first:
       {id, created_at, by, changes: {description: [old, new]}}. Never answers.
+      Questions on a to-do (todo plan 45b): tasks ask asks the other person on the
+      to-do one structured question (a decision, an approval, or what unblocks it)
+      instead of filing a separate to-do. BODY is markdown or @file.md. --option TEXT
+      is a short answer to pick: 0 to 6 of them, recommended first. --allow-text lets
+      the person answer in text as well. --to EMAIL names who is asked; without it
+      the server picks whose turn it is (the reviewer when the asker is the assignee,
+      the assignee the other way). At most 3 open questions per to-do.
+      questions list shows the questions asked of me, oldest first (--status
+      open|answered|withdrawn; --asked-by me shows the ones I asked). questions
+      answer answers one with --choice TEXT (a picked option) or --text TEXT; the
+      answer is posted as a comment on the to-do. questions withdraw takes one back
+      (the person who asked, or the admin).
       Email to-dos (todo plan 44): one to-do can carry exactly one email the person sends from
       their own mail client (the app never sends it). Give the draft with --email-to,
       --email-cc, --email-bcc, --email-subject, --email-body (text or @file), and --email-from
@@ -244,6 +260,7 @@ module Todos
       when "tasks" then tasks
       when "invites" then invites
       when "contexts" then contexts
+      when "questions" then questions
       when "webhooks" then webhooks
       when "help", "-h", "--help", nil then { usage: USAGE }
       else
@@ -548,6 +565,7 @@ module Todos
       when "respond" then tasks_respond
       when "comment" then tasks_comment
       when "comments" then tasks_comments
+      when "ask" then tasks_ask
       when "versions" then tasks_versions
       when "email" then tasks_email
       when "link" then tasks_link
@@ -555,7 +573,7 @@ module Todos
       when "unlink" then tasks_unlink
       when "link-expire" then tasks_link_expire
       else
-        fail_usage!("Usage: todos-cli tasks <list|get|show|check|create|update|destroy|approve|send-back|star|plan|submit|reopen|cancel|block|unblock|remind|respond|comment|comments|versions|email|link|links|unlink|link-expire>")
+        fail_usage!("Usage: todos-cli tasks <list|get|show|check|create|update|destroy|approve|send-back|star|plan|submit|reopen|cancel|block|unblock|remind|respond|comment|comments|ask|versions|email|link|links|unlink|link-expire>")
       end
     end
 
@@ -1190,6 +1208,77 @@ module Todos
 
     def post_comment(id, text) = request(:post, "/tasks/#{id}/comments.json", body: { body: text })
 
+    # One structured question on a to-do (todo plan 45b, POST
+    # /tasks/:id/questions.json): the person who may comment asks one person a
+    # decision (question), an approval, or what unblocks the to-do, instead of
+    # filing a separate to-do. BODY is markdown or @file.md. --option TEXT is a
+    # short answer to pick (0 to 6, recommended first); --allow-text lets the
+    # person answer in text as well; --to EMAIL names who is asked (without it
+    # the server picks whose turn it is). At most 3 open questions per to-do;
+    # the answer comes back as a comment on the to-do.
+    def tasks_ask
+      id = required_positional!("task id")
+      options = parse_options(@args, kind: true, option: true, allow_text: true, to: true)
+      body = question_body_text(required_option!(@args.shift.to_s.strip, "question body"))
+      ensure_no_args!
+      list = Array(options[:options])
+      if list.size > 6
+        raise Error.new("A question takes at most 6 options", code: "INVALID_ARGUMENT")
+      end
+
+      payload = {
+        body: body,
+        kind: options[:kind] || "question",
+        options: list,
+        allow_text: options[:allow_text] == true
+      }
+      payload[:asked_of_email] = options[:to] if options.key?(:to)
+      request(:post, "/tasks/#{id}/questions.json", body: payload)
+    end
+
+    # My questions (todo plan 45b). list: the questions asked of me, oldest
+    # first (GET /questions.json); --status open|answered|withdrawn (open is
+    # the default, all for everything) and --asked-by me (the ones I asked)
+    # go straight to the server as query params.
+    def questions
+      subcommand = @args.shift
+      case subcommand
+      when "list"
+        options = parse_options(@args, status: true, asked_by: true)
+        ensure_no_args!
+        query = {}
+        query[:status] = options[:status] if options.key?(:status)
+        query[:asked_by] = options[:asked_by] if options.key?(:asked_by)
+        payload = @client.request(:get, "/questions.json", query: query)
+        return payload.is_a?(Hash) ? payload["questions"] : nil
+      when "answer" then questions_answer
+      when "withdraw"
+        id = required_positional!("question id")
+        ensure_no_args!
+        request(:patch, "/questions/#{id}/withdraw.json")
+      else
+        fail_usage!("Usage: todos-cli questions <list|answer|withdraw>")
+      end
+    end
+
+    # Answer a question asked of me (PATCH /questions/:id/answer.json): the
+    # picked option (--choice), free text (--text), or both. The answer is
+    # posted as a comment on the to-do; the to-do keeps its status. Only the
+    # person asked may answer.
+    def questions_answer
+      id = required_positional!("question id")
+      options = parse_options(@args, choice: true, text: true)
+      ensure_no_args!
+      body = {}
+      body[:choice] = options[:choice] if options.key?(:choice)
+      body[:text] = options[:text] if options.key?(:text)
+      if body.empty?
+        raise Error.new("Pass --choice TEXT (a picked option) or --text TEXT", code: "INVALID_ARGUMENT")
+      end
+
+      request(:patch, "/questions/#{id}/answer.json", body: body)
+    end
+
     # The deprecated --notes (one release): posts a comment as me, after the
     # rest of the change, and says so on stderr. Returns the task from the
     # change with the new comment in its thread, or the comment when
@@ -1334,6 +1423,12 @@ module Todos
       parser.on("--notes TEXT") { |value| options[:notes] = value } if allowed[:notes]
       parser.on("--note TEXT") { |value| options[:note] = value } if allowed[:note]
       parser.on("--file PATH", "Attach a file (repeatable)") { |value| (options[:files] ||= []) << value } if allowed[:files]
+      parser.on("--option TEXT", "Question: a short answer to pick (repeatable, 0 to 6, recommended first)") { |value| (options[:options] ||= []) << value } if allowed[:option]
+      parser.on("--allow-text", "Question: let the person answer in text as well") { options[:allow_text] = true } if allowed[:allow_text]
+      parser.on("--to EMAIL", "Question: who to ask (default: whose turn it is on the to-do)") { |value| options[:to] = value.strip } if allowed[:to]
+      parser.on("--choice TEXT", "Question answer: the picked option") { |value| options[:choice] = value } if allowed[:choice]
+      parser.on("--text TEXT", "Question answer: free text") { |value| options[:text] = value } if allowed[:text]
+      parser.on("--asked-by WHO", "questions list: me shows the questions I asked") { |value| options[:asked_by] = value.strip } if allowed[:asked_by]
       parser.on("--reason TEXT") { |value| options[:reason] = value } if allowed[:reason]
       parser.on("--days N", "Link: days until it ends (1 to 30, 14 when left out)") { |value| options[:days] = link_days(value) } if allowed[:days]
       parser.on("--at DATE", "Link: when it ends (YYYY-MM-DD or an ISO 8601 time)") { |value| options[:at] = link_time(value) } if allowed[:at]
@@ -1398,10 +1493,20 @@ module Todos
 
     # Comment text in markdown, or "@file.md" for a file.
     def comment_text(value)
+      inline_or_file_text(value, "Comment")
+    end
+
+    # A question body in markdown, or "@file.md" for a file.
+    def question_body_text(value)
+      inline_or_file_text(value, "Question body")
+    end
+
+    # Inline text, or "@file.md" reading the file.
+    def inline_or_file_text(value, what)
       return value unless value.start_with?("@")
 
       path = File.expand_path(value.delete_prefix("@"))
-      raise Error.new("Comment file not found: #{path}", code: "INVALID_ARGUMENT") unless File.file?(path)
+      raise Error.new("#{what} file not found: #{path}", code: "INVALID_ARGUMENT") unless File.file?(path)
 
       File.read(path)
     end

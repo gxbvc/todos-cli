@@ -1560,4 +1560,104 @@ class TodosCliContextsTest < Minitest::Test
     assert_equal "INVALID_ARGUMENT", output["code"]
     assert_empty server.requests
   end
+
+  # Questions on to-dos (todo plan 45b).
+  def test_tasks_ask_posts_the_question
+    server = StubServer.new(body: JSON.generate({ question: { id: 8, status: "open" } }))
+    output, _stderr, status = run_cli("tasks", "ask", "11", "Which carrier?", "--kind", "approval", "--option", "UPS", "--option", "FedEx", "--allow-text", "--to", "sarah@example.com", server: server)
+    assert_equal 0, status.exitstatus
+    request = server.requests.pop
+    assert_equal "POST", request[:method]
+    assert_equal "/tasks/11/questions.json", request[:target]
+    assert_equal({
+      "body" => "Which carrier?", "kind" => "approval", "options" => ["UPS", "FedEx"],
+      "allow_text" => true, "asked_of_email" => "sarah@example.com"
+    }, json_body(request))
+    assert_equal({ "id" => 8, "status" => "open" }, output["data"]["question"])
+  end
+
+  def test_tasks_ask_defaults_kind_options_and_allow_text
+    server = StubServer.new({})
+    run_cli("tasks", "ask", "11", "Which carrier?", server: server)
+    assert_equal({
+      "body" => "Which carrier?", "kind" => "question", "options" => [], "allow_text" => false
+    }, json_body(server.requests.pop))
+  end
+
+  def test_tasks_ask_refuses_more_than_six_options_before_any_request
+    server = StubServer.new
+    args = ["tasks", "ask", "11", "Pick one", *Array.new(7) { |i| ["--option", "Number #{i + 1}"] }.flatten]
+    output, _stderr, status = run_cli(*args, server: server)
+
+    assert_equal 1, status.exitstatus
+    assert_equal "INVALID_ARGUMENT", output["code"]
+    assert_includes output["error"], "at most 6 options"
+    assert_empty server.requests, "nothing was sent"
+  end
+
+  def test_tasks_ask_refuses_an_empty_body_before_any_request
+    server = StubServer.new
+    output, _stderr, status = run_cli("tasks", "ask", "11", "   ", server: server)
+
+    assert_equal 1, status.exitstatus
+    assert_equal "INVALID_ARGUMENT", output["code"]
+    assert_includes output["error"], "question body is required"
+    assert_empty server.requests
+  end
+
+  def test_questions_list_passes_status_and_asked_by_to_the_server
+    questions = [{ "id" => 5, "body" => "Which carrier?", "status" => "open" }]
+    server = StubServer.new(body: JSON.generate({ questions: questions }))
+    output, _stderr, status = run_cli("questions", "list", "--status", "open", "--asked-by", "me", server: server)
+
+    assert_equal 0, status.exitstatus
+    assert_equal questions, output["data"]
+    request = server.requests.pop
+    assert_equal "GET", request[:method]
+    assert_equal "/questions.json?status=open&asked_by=me", request[:target]
+  end
+
+  def test_questions_answer_sends_choice_or_text_and_refuses_neither
+    server = StubServer.new(body: JSON.generate({ question: { id: 5, status: "answered" } }))
+    output, _stderr, status = run_cli("questions", "answer", "5", "--choice", "UPS", server: server)
+    assert_equal 0, status.exitstatus
+    request = server.requests.pop
+    assert_equal "PATCH", request[:method]
+    assert_equal "/questions/5/answer.json", request[:target]
+    assert_equal({ "choice" => "UPS" }, json_body(request))
+    assert_equal({ "id" => 5, "status" => "answered" }, output["data"]["question"])
+
+    server = StubServer.new({})
+    run_cli("questions", "answer", "5", "--text", "UPS, and call them first", server: server)
+    assert_equal({ "text" => "UPS, and call them first" }, json_body(server.requests.pop))
+
+    server = StubServer.new
+    output, _stderr, status = run_cli("questions", "answer", "5", server: server)
+    assert_equal 1, status.exitstatus
+    assert_equal "INVALID_ARGUMENT", output["code"]
+    assert_includes output["error"], "--choice"
+    assert_empty server.requests, "nothing was sent"
+  end
+
+  def test_questions_withdraw_patches_the_withdraw_route
+    server = StubServer.new(body: JSON.generate({ question: { id: 5, status: "withdrawn" } }))
+    output, _stderr, status = run_cli("questions", "withdraw", "5", server: server)
+
+    assert_equal 0, status.exitstatus
+    assert_equal({ "id" => 5, "status" => "withdrawn" }, output["data"]["question"])
+    request = server.requests.pop
+    assert_equal ["PATCH", "/questions/5/withdraw.json"], [request[:method], request[:target]]
+    assert_nil json_body(request)
+  end
+
+  def test_usage_lists_the_question_commands
+    server = StubServer.new
+    output, = run_cli("help", server: server)
+
+    assert_includes output["data"]["usage"], "todos-cli tasks ask <task_id>"
+    assert_includes output["data"]["usage"], "todos-cli questions list"
+    assert_includes output["data"]["usage"], "todos-cli questions answer <question_id>"
+    assert_includes output["data"]["usage"], "todos-cli questions withdraw <question_id>"
+    assert_includes output["data"]["usage"], "At most 3 open questions per to-do"
+  end
 end
