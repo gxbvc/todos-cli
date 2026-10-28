@@ -93,6 +93,23 @@ class SecretCliTest < Minitest::Test
     end
   end
 
+  def test_a_value_typed_where_the_id_goes_sends_nothing_and_is_never_echoed
+    path = secret_file
+    [["tasks", "secret", FAKE, "--key", "k", "--secret-file", path],
+     ["tasks", "secret", "12#{FAKE}", "--key", "k", "--secret-stdin"],
+     ["tasks", "secret-wipe", FAKE, "--key", "k"],
+     ["tasks", "secret"]].each do |args|
+      server = StubServer.new
+      output, stderr = run_cli(*args, server: server, stdin: FAKE)
+      assert_equal "INVALID_ARGUMENT", output["code"], args.inspect
+      assert_match(/digits only/, output["error"])
+      refute_includes JSON.generate(output), FAKE, args.inspect
+      refute_includes stderr, FAKE, args.inspect
+      assert server.requests.empty?, args.inspect
+    end
+    assert File.exist?(path), "the file is not read or deleted"
+  end
+
   def test_needs_a_source_and_a_key
     server = StubServer.new
     output, = run_cli("tasks", "secret", "677", "--key", "k", server: server)

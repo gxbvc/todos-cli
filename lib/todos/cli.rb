@@ -1227,7 +1227,7 @@ module Todos
     # The file is deleted once the server holds the value (--keep-file keeps
     # it). The secret routes take no .json suffix.
     def tasks_secret
-      id = required_positional!("task id")
+      id = secret_task_id!
       options = quiet_secret_args { parse_options(@args, key: true, secret_file: true, secret_stdin: true, keep_file: true, days: true) }
       quiet_secret_args { ensure_no_args! }
       key = secret_key!(options[:key])
@@ -1246,7 +1246,7 @@ module Todos
     # Wipe the doer's secret now (DELETE /tasks/:id/secrets/:key): the asker,
     # in any status.
     def tasks_secret_wipe
-      id = required_positional!("task id")
+      id = secret_task_id!
       options = parse_options(@args, key: true)
       ensure_no_args!
       key = secret_key!(options[:key])
@@ -1639,7 +1639,7 @@ module Todos
 
     # A mistyped command could carry the value itself ("--secret=..." or a
     # stray argument): its error never repeats what was typed.
-    SECRET_ARGS_MESSAGE = "Unexpected argument or option (not shown). A secret is never an argument: use --secret-file PATH or --secret-stdin. Options: --key KEY, --days N, --keep-file."
+    SECRET_ARGS_MESSAGE = "Unexpected argument or option (not shown). Usage: tasks secret <task id, digits only> --key KEY (--secret-file PATH | --secret-stdin) [--days N] [--keep-file]. A secret is never an argument."
 
     def quiet_secret_args
       yield
@@ -1647,6 +1647,16 @@ module Todos
       raise e unless e.code == "INVALID_ARGUMENT" && (e.message.start_with?("Unexpected argument") || e.message.match?(/invalid option|ambiguous option|needless argument|missing argument/))
 
       raise Error.new(SECRET_ARGS_MESSAGE, code: "INVALID_ARGUMENT")
+    end
+
+    # The task id, digits only, checked before any file is read or any
+    # request is made: a value typed in its place must never reach the URL
+    # path (server and proxy logs) or an error line.
+    def secret_task_id!
+      id = @args.shift.to_s
+      raise Error.new(SECRET_ARGS_MESSAGE, code: "INVALID_ARGUMENT") unless id.match?(/\A[0-9]+\z/)
+
+      id
     end
 
     def secret_key!(value)
