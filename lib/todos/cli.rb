@@ -182,6 +182,7 @@ module Todos
       600) or --secret-stdin, never from an argument; it is never printed (data says its length and
       sha8) and the file is deleted afterwards unless --keep-file. Keep such files under
       ~/.config/gxb-handoff/. tasks secret-wipe <id> --key KEY wipes it now.
+      Agents: run it through ~/projects/hq/bin/todos-secret
       Webhooks: todo.gxb.vc POSTs a signed event to your https URL when a to-do you can open changes.
       --events: task.created task.updated task.submitted task.approved task.reopened task.canceled
       task.blocked task.unblocked task.logged comment.created comment.deleted, or * (all, the default).
