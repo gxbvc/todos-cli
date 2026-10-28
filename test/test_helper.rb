@@ -81,7 +81,7 @@ class StubServer
 end
 
 module CLITestHelpers
-  def run_cli(*args, server:, cwd: TOOL_ROOT, executable: EXECUTABLE, env: {})
+  def run_cli(*args, server:, cwd: TOOL_ROOT, executable: EXECUTABLE, env: {}, stdin: "")
     process_env = {
       "TODOS_API_KEY" => "test-key",
       "TODOS_BASE_URL" => server.url,
@@ -94,7 +94,7 @@ module CLITestHelpers
       "HTTP_PROXY" => nil,
       "http_proxy" => nil
     }.merge(env)
-    stdout, stderr, status = Open3.capture3(process_env, executable, *args, chdir: cwd)
+    stdout, stderr, status = Open3.capture3(process_env, executable, *args, chdir: cwd, stdin_data: stdin)
     server.finish
     [JSON.parse(stdout), stderr, status]
   end

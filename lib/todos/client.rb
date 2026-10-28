@@ -64,6 +64,7 @@ module Todos
         get: Net::HTTP::Get,
         post: Net::HTTP::Post,
         patch: Net::HTTP::Patch,
+        put: Net::HTTP::Put,
         delete: Net::HTTP::Delete
       }.fetch(method.to_sym) do
         raise Error.new("Unsupported HTTP method: #{method}", code: "INTERNAL_ERROR")

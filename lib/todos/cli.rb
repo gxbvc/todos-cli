@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "digest"
 require "json"
 require "optparse"
 require "time"
@@ -62,6 +63,8 @@ module Todos
         todos-cli tasks links <id>
         todos-cli tasks unlink <id> <link_id>
         todos-cli tasks link-expire <id> <link_id> --at DATE
+        todos-cli tasks secret <id> --key KEY (--secret-file PATH | --secret-stdin) [--days N] [--keep-file]
+        todos-cli tasks secret-wipe <id> --key KEY
         todos-cli webhooks list
         todos-cli webhooks create --url URL [--events TYPE,TYPE|*] [--description TEXT]
         todos-cli webhooks update <id> [--url URL] [--events TYPE,TYPE|*] [--description TEXT] [--active true|false]
@@ -172,6 +175,13 @@ module Todos
       link-expire <id> <link_id> --at DATE moves its end (YYYY-MM-DD, or an ISO 8601 time; 30 days
       from now at most). Only the asker (reviewer) or the admin does these. Reassigning the to-do
       ends its open links. A link opens one card, with no comments, history, or file downloads.
+      tasks secret <id> --key KEY gives the person doing the to-do a secret (todo plan 40): only they
+      can reveal it, once signed in on todo.gxb.vc, and it is wiped when they say they have it, when
+      the to-do is done, or after --days (1 to 30, 7 when left out). Only the asker, with an API key
+      the admin allowed for secrets. The value comes from --secret-file PATH (a regular file, mode
+      600) or --secret-stdin, never from an argument; it is never printed (data says its length and
+      sha8) and the file is deleted afterwards unless --keep-file. Keep such files under
+      ~/.config/gxb-handoff/. tasks secret-wipe <id> --key KEY wipes it now.
       Webhooks: todo.gxb.vc POSTs a signed event to your https URL when a to-do you can open changes.
       --events: task.created task.updated task.submitted task.approved task.reopened task.canceled
       task.blocked task.unblocked task.logged comment.created comment.deleted, or * (all, the default).
@@ -190,8 +200,8 @@ module Todos
       title, status, project_id, project_title, user_id, assigner_id, url}. Never answers or comments.
     TEXT
 
-    def self.run(args, client: Client.new, out: $stdout, err: $stderr)
-      data = new(args, client: client, err: err).execute
+    def self.run(args, client: Client.new, out: $stdout, err: $stderr, input: $stdin)
+      data = new(args, client: client, err: err, input: input).execute
       out.puts(JSON.generate(ok: true, data: data))
       0
     rescue Todos::Error => e
@@ -240,10 +250,11 @@ module Todos
       end
     end
 
-    def initialize(args, client:, err: $stderr)
+    def initialize(args, client:, err: $stderr, input: $stdin)
       @args = args.dup
       @client = client
       @err = err
+      @in = input
       @users = nil
     end
 
@@ -572,8 +583,10 @@ module Todos
       when "links" then tasks_links
       when "unlink" then tasks_unlink
       when "link-expire" then tasks_link_expire
+      when "secret" then tasks_secret
+      when "secret-wipe" then tasks_secret_wipe
       else
-        fail_usage!("Usage: todos-cli tasks <list|get|show|check|create|update|destroy|approve|send-back|star|plan|submit|reopen|cancel|block|unblock|remind|respond|comment|comments|ask|versions|email|link|links|unlink|link-expire>")
+        fail_usage!("Usage: todos-cli tasks <list|get|show|check|create|update|destroy|approve|send-back|star|plan|submit|reopen|cancel|block|unblock|remind|respond|comment|comments|ask|versions|email|link|links|unlink|link-expire|secret|secret-wipe>")
       end
     end
 
@@ -1206,6 +1219,41 @@ module Todos
       request(:patch, "/tasks/#{id}/links/#{link_id}.json", body: { expires_at: at })
     end
 
+    # A secret for the doer (todo plan 40, PUT /tasks/:id/secrets/:key): the
+    # asker sets it with an API key the admin allowed (can_set_secrets). The
+    # value comes from a file (a regular file, not a link, mode 0600 or
+    # tighter) or stdin, never from an argument, and is never printed: the
+    # reply says only its length and the first 8 characters of its SHA-256.
+    # The file is deleted once the server holds the value (--keep-file keeps
+    # it). The secret routes take no .json suffix.
+    def tasks_secret
+      id = required_positional!("task id")
+      options = quiet_secret_args { parse_options(@args, key: true, secret_file: true, secret_stdin: true, keep_file: true, days: true) }
+      quiet_secret_args { ensure_no_args! }
+      key = secret_key!(options[:key])
+      value, path = read_secret_value(options)
+      body = { secret: value }
+      body[:expires_in_days] = options[:days] if options.key?(:days)
+      result = request(:put, "/tasks/#{id}/secrets/#{URI.encode_www_form_component(key)}", body: body)
+      deleted = false
+      if path && !options[:keep_file]
+        File.delete(path)
+        deleted = true
+      end
+      secret_summary(id, key, value, result).merge(file_deleted: deleted)
+    end
+
+    # Wipe the doer's secret now (DELETE /tasks/:id/secrets/:key): the asker,
+    # in any status.
+    def tasks_secret_wipe
+      id = required_positional!("task id")
+      options = parse_options(@args, key: true)
+      ensure_no_args!
+      key = secret_key!(options[:key])
+      result = request(:delete, "/tasks/#{id}/secrets/#{URI.encode_www_form_component(key)}")
+      { task_id: id.to_i, key: key, secret: result.is_a?(Hash) ? result["secret"] : nil }
+    end
+
     def post_comment(id, text) = request(:post, "/tasks/#{id}/comments.json", body: { body: text })
 
     # One structured question on a to-do (todo plan 45b, POST
@@ -1430,7 +1478,11 @@ module Todos
       parser.on("--text TEXT", "Question answer: free text") { |value| options[:text] = value } if allowed[:text]
       parser.on("--asked-by WHO", "questions list: me shows the questions I asked") { |value| options[:asked_by] = value.strip } if allowed[:asked_by]
       parser.on("--reason TEXT") { |value| options[:reason] = value } if allowed[:reason]
-      parser.on("--days N", "Link: days until it ends (1 to 30, 14 when left out)") { |value| options[:days] = link_days(value) } if allowed[:days]
+      parser.on("--days N", "Link or secret: days until it ends (1 to 30)") { |value| options[:days] = link_days(value) } if allowed[:days]
+      parser.on("--key KEY", "Secret: the field key") { |value| options[:key] = value } if allowed[:key]
+      parser.on("--secret-file PATH", "Secret: read the value from this 0600 file") { |value| options[:secret_file] = value } if allowed[:secret_file]
+      parser.on("--secret-stdin", "Secret: read the value from stdin") { options[:secret_stdin] = true } if allowed[:secret_stdin]
+      parser.on("--keep-file", "Secret: do not delete the file afterwards") { options[:keep_file] = true } if allowed[:keep_file]
       parser.on("--at DATE", "Link: when it ends (YYYY-MM-DD or an ISO 8601 time)") { |value| options[:at] = link_time(value) } if allowed[:at]
       parser.on("--star") { options[:star] = true } if allowed[:star]
       parser.on("--sort VALUE", "tasks list: priority sorts urgent, high, normal, low, then due date") { |value| options[:sort] = value } if allowed[:sort]
@@ -1583,6 +1635,60 @@ module Todos
       raise Error.new("#{name} must be a whole number, 0 or more", code: "INVALID_ARGUMENT") unless integer && integer >= 0
 
       integer
+    end
+
+    # A mistyped command could carry the value itself ("--secret=..." or a
+    # stray argument): its error never repeats what was typed.
+    SECRET_ARGS_MESSAGE = "Unexpected argument or option (not shown). A secret is never an argument: use --secret-file PATH or --secret-stdin. Options: --key KEY, --days N, --keep-file."
+
+    def quiet_secret_args
+      yield
+    rescue Error => e
+      raise e unless e.code == "INVALID_ARGUMENT" && (e.message.start_with?("Unexpected argument") || e.message.match?(/invalid option|ambiguous option|needless argument|missing argument/))
+
+      raise Error.new(SECRET_ARGS_MESSAGE, code: "INVALID_ARGUMENT")
+    end
+
+    def secret_key!(value)
+      key = required_option!(value.to_s.strip, "--key")
+      raise Error.new("--key may not contain a /", code: "INVALID_ARGUMENT") if key.include?("/")
+
+      key
+    end
+
+    # [value, path or nil]. One trailing newline is dropped (an editor or
+    # `printf '%s\n'` adds one). Never puts the value in an error.
+    def read_secret_value(options)
+      if options[:secret_file] && options[:secret_stdin]
+        raise Error.new("Use --secret-file or --secret-stdin, not both", code: "INVALID_ARGUMENT")
+      end
+      path = options[:secret_file]
+      if path
+        path = File.expand_path(path)
+        stat = File.lstat(path)
+        raise Error.new("--secret-file must be a regular file, not a link", code: "INVALID_ARGUMENT") unless stat.file?
+        if (stat.mode & 0o077) != 0
+          raise Error.new("--secret-file must be readable by you only (chmod 600)", code: "INVALID_ARGUMENT")
+        end
+        raw = File.binread(path)
+      elsif options[:secret_stdin]
+        raw = @in.read.to_s.b
+      else
+        raise Error.new("Give the value with --secret-file PATH or --secret-stdin (never as an argument)", code: "INVALID_ARGUMENT")
+      end
+      value = raw.dup.force_encoding(Encoding::UTF_8).delete_suffix("\n").delete_suffix("\r")
+      raise Error.new("The secret is not valid UTF-8 text", code: "INVALID_ARGUMENT") unless value.valid_encoding?
+      raise Error.new("The secret is empty", code: "INVALID_ARGUMENT") if value.strip.empty?
+
+      [value, path]
+    rescue Errno::ENOENT
+      raise Error.new("--secret-file does not exist", code: "INVALID_ARGUMENT")
+    end
+
+    def secret_summary(id, key, value, result)
+      { task_id: id.to_i, key: key, length: value.length,
+        sha8: Digest::SHA256.hexdigest(value)[0, 8],
+        secret: result.is_a?(Hash) ? result["secret"] : nil }
     end
 
     def link_days(value)
