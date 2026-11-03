@@ -93,8 +93,10 @@ module CLITestHelpers
       "RUBYOPT" => nil,
       "HTTP_PROXY" => nil,
       "http_proxy" => nil,
-      # Tests never read the herdr pane they happen to run in (plan 51 route).
-      "HERDR_PANE_ID" => nil
+      # Tests never read the herdr pane they run in, nor run a real route command (plan 51).
+      "HERDR_PANE_ID" => nil,
+      "TODOS_ROUTE" => nil,
+      "TODOS_ROUTE_COMMAND" => "/nonexistent/todos-cli-test-route-command"
     }.merge(env)
     stdout, stderr, status = Open3.capture3(process_env, executable, *args, chdir: cwd, stdin_data: stdin)
     server.finish

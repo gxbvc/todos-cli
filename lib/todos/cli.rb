@@ -122,12 +122,13 @@ module Todos
       chip), bug, feature, or question; everything but task shows a chip on the card. Give a bug
       or a feature request --kind bug or --kind feature; a client's how-do-I goes as --kind question.
       --route NAME (todo plan 51) is the herdr AGENT NAME (like cloud or todo, never a tab id) that
-      hears about changes to the to-do at once. tasks create fills it by itself: inside a herdr pane
-      it reads HERDR_PANE_ID and asks herdr agent list for that pane's agent name. Outside a pane, or
-      when the pane has no agent name, it sends no route and prints a warning; the change then goes
-      to the project's manager. --route NAME sends another agent; --no-route sends none. On tasks
-      update, --route NAME sets it and --route "" clears it. Lowercase letters, digits and dashes,
-      40 at most. Only GXB staff and the admin can set it; the server ignores it for anyone else.
+      hears about changes to the to-do at once. tasks create fills it by itself: TODOS_ROUTE when
+      set, else the first word of the one line the route command prints (TODOS_ROUTE_COMMAND,
+      default herdr-whoami: "<agent> <workspace>", nothing outside a herdr pane). With no route it
+      prints a warning and the change goes to the project's manager. --route NAME sends another
+      agent; --no-route sends none. On tasks update, --route NAME sets it and --route "" clears it.
+      Lowercase letters, digits and dashes, 40 at most. Only GXB staff and the admin can set it;
+      the server ignores it for anyone else.
       --blocked-by (tasks update, no --user) says what this to-do waits on: a comma list of to-do
       ids (--blocked-by 12,34), each one the caller can open. It REPLACES the set every time;
       --blocked-by "" waits on nothing. The card shows "Blocked by #12 Title" links. Never a
@@ -757,8 +758,8 @@ module Todos
       task[:estimated_minutes] = options[:estimate] if options.key?(:estimate)
       task[:contexts] = context_names(options) if options.key?(:contexts)
       add_plan_fields!(task, options)
-      # Where changes to this to-do go (plan 51): the herdr agent this runs
-      # in, unless --route or --no-route says otherwise.
+      # Where changes to this to-do go (plan 51): TODOS_ROUTE or the route
+      # command, unless --route or --no-route says otherwise.
       route = create_route(options)
       task[:route] = route if route
       # The draft email (plan 44): to and subject are required, and the
@@ -813,7 +814,7 @@ module Todos
 
       task = {}
       # --route NAME sets it, --route "" clears it (plan 51). Never filled
-      # from herdr on an edit: only create picks the default.
+      # from the route command on an edit: only create picks the default.
       task[:route] = route_name!(options[:route]).to_s if options.key?(:route)
       task[:title] = options[:title] if options.key?(:title)
       task[:project_id] = options[:project] if options.key?(:project)
@@ -917,15 +918,24 @@ module Todos
     ROUTE_FORMAT = /\A[a-z0-9][a-z0-9-]{0,39}\z/
     ROUTE_WARNING = "No route: run inside a herdr pane, or pass --route NAME (or --no-route). " \
                     "Changes to this to-do go to the project's manager."
-    HERDR_TIMEOUT = 3
+    ROUTE_COMMAND = "herdr-whoami"
+    ROUTE_COMMAND_TIMEOUT = 3
+    ROUTE_COMMAND_MAX_BYTES = 256
 
     # The route a new to-do gets (plan 51): --no-route or --route "" sends
-    # none, --route NAME that agent, otherwise the agent of this herdr pane.
+    # none, --route NAME that agent; otherwise TODOS_ROUTE, otherwise the
+    # route command (TODOS_ROUTE_COMMAND, default herdr-whoami). todos-cli
+    # knows nothing about herdr: the command prints "<agent> <workspace>".
+    # The workspace is read and checked but not sent until the server has
+    # its column (route_workspace).
     def create_route(options)
       return nil if options[:no_route]
       return route_name!(options[:route]) if options.key?(:route)
 
-      herdr_route
+      # A set TODOS_ROUTE is the answer, good or bad: the command never runs.
+      name = ENV["TODOS_ROUTE"].to_s.strip.empty? ? command_route : env_route
+      @err.puts(ROUTE_WARNING) unless name
+      name
     end
 
     # nil for blank; else the exact name (upper case is refused, never
@@ -938,36 +948,37 @@ module Todos
       raise Error.new("--route must be a herdr agent name: lowercase letters, digits and dashes, 40 at most", code: "INVALID_ARGUMENT")
     end
 
-    # The agent name of the herdr pane this runs in, or nil with a warning.
-    # Never fails the create: a missing herdr, a slow one, or odd output only
-    # means no route.
-    def herdr_route
-      pane = ENV["HERDR_PANE_ID"].to_s.strip
-      name = pane.empty? ? nil : herdr_agent_name(pane)
-      @err.puts(ROUTE_WARNING) unless name
-      name
+    # TODOS_ROUTE, when set: the agent name. A bad value is no route (with
+    # the warning), never a failed create.
+    def env_route
+      name = ENV["TODOS_ROUTE"].to_s.strip
+      name if name.match?(ROUTE_FORMAT)
     end
 
-    def herdr_agent_name(pane)
-      output = herdr_agent_list
+    # Run the route command (argv exec, never a shell; 3 s cap, its own
+    # process group) and read its one line "<agent> <workspace>". Anything
+    # else, a failure, or a slow command means no route.
+    def command_route
+      command = ENV["TODOS_ROUTE_COMMAND"].to_s.strip
+      command = ROUTE_COMMAND if command.empty?
+      output = run_route_command(command)
       return nil unless output
 
-      agents = JSON.parse(output).dig("result", "agents")
-      return nil unless agents.is_a?(Array)
+      lines = output.split("\n")
+      return nil unless lines.size == 1
 
-      agent = agents.find { |row| row.is_a?(Hash) && row["pane_id"] == pane }
-      name = agent && agent["name"].to_s
-      name if name&.match?(ROUTE_FORMAT)
-    rescue JSON::ParserError
-      nil
+      words = lines.first.split(" ")
+      return nil unless words.size == 2 && words.all? { |word| word.match?(ROUTE_FORMAT) }
+
+      words.first
     end
 
-    def herdr_agent_list
-      Open3.popen2("herdr", "agent", "list", err: File::NULL, pgroup: true) do |stdin, stdout, wait|
+    def run_route_command(command)
+      Open3.popen2([command, command], err: File::NULL, pgroup: true) do |stdin, stdout, wait|
         stdin.close
-        reader = Thread.new { stdout.read }
-        unless wait.join(HERDR_TIMEOUT)
-          # Its own process group: kill herdr and anything it started.
+        reader = Thread.new { stdout.read(ROUTE_COMMAND_MAX_BYTES + 1) }
+        unless wait.join(ROUTE_COMMAND_TIMEOUT)
+          # Its own process group: kill the command and anything it started.
           begin
             Process.kill("KILL", -wait.pid)
           rescue Errno::ESRCH
@@ -977,8 +988,10 @@ module Todos
           reader.join(1)
           return nil
         end
-        output = reader.value
-        wait.value.success? ? output : nil
+        output = reader.value.to_s
+        return nil if output.bytesize > ROUTE_COMMAND_MAX_BYTES || !wait.value.success?
+
+        output.chomp
       end
     rescue SystemCallError
       nil
@@ -1581,7 +1594,7 @@ module Todos
       parser.on("--off") { options[:off] = true } if allowed[:off]
       parser.on("--allow-external") { options[:allow_external] = true } if allowed[:allow_external]
       parser.on("--route NAME", "herdr agent name that hears about changes (plan 51); \"\" clears on update") { |value| options[:route] = value } if allowed[:route]
-      parser.on("--no-route", "tasks create: send no route (do not read it from herdr)") { options[:no_route] = true } if allowed[:no_route]
+      parser.on("--no-route", "tasks create: send no route (do not read TODOS_ROUTE or run the route command)") { options[:no_route] = true } if allowed[:no_route]
       parser.parse!(args)
       options
     rescue OptionParser::ParseError => e
