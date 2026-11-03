@@ -92,7 +92,9 @@ module CLITestHelpers
       "RUBYLIB" => nil,
       "RUBYOPT" => nil,
       "HTTP_PROXY" => nil,
-      "http_proxy" => nil
+      "http_proxy" => nil,
+      # Tests never read the herdr pane they happen to run in (plan 51 route).
+      "HERDR_PANE_ID" => nil
     }.merge(env)
     stdout, stderr, status = Open3.capture3(process_env, executable, *args, chdir: cwd, stdin_data: stdin)
     server.finish

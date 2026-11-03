@@ -2,6 +2,7 @@
 
 require "digest"
 require "json"
+require "open3"
 require "optparse"
 require "time"
 require "uri"
@@ -35,11 +36,11 @@ module Todos
         todos-cli tasks list [--user <id|email>] [--project ID] [--status STATUS] [--context NAME,NAME] [--sort priority]
         todos-cli tasks get|show <id> [--user <id|email>]
         todos-cli tasks check -t TITLE [--description MARKDOWN|@file] [--schema JSON|@file]
-        todos-cli tasks create -t TITLE --project ID [--assignee EMAIL] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--kind KIND] [--context NAME,NAME] [--schema JSON|@file] [--star] [--allow-external]
-        todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--source-url URL] [--kind KIND] [--schema JSON|@file] [--star]
+        todos-cli tasks create -t TITLE --project ID [--assignee EMAIL] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--kind KIND] [--context NAME,NAME] [--schema JSON|@file] [--star] [--allow-external] [--route NAME | --no-route]
+        todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--source-url URL] [--kind KIND] [--schema JSON|@file] [--star] [--route NAME | --no-route]
         todos-cli tasks create/update ... [--email-to ADDRESSES] [--email-cc ADDRESSES] [--email-bcc ADDRESSES] [--email-subject SUBJECT] [--email-body TEXT|@file] [--email-from HINT]
         todos-cli tasks email <id> [--json]
-        todos-cli tasks update <id> [--user <id|email>] [--title TITLE] [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--source-url URL] [--kind KIND] [--blocked-by IDS] [--context NAME,NAME] [--schema JSON|@file] [--field key=value]
+        todos-cli tasks update <id> [--user <id|email>] [--title TITLE] [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--source-url URL] [--kind KIND] [--blocked-by IDS] [--context NAME,NAME] [--schema JSON|@file] [--field key=value] [--route NAME]
         todos-cli tasks destroy <id> --user <id|email>
         todos-cli tasks submit <id> [--user <id|email>] [--field key=value]
         todos-cli tasks approve <id> [--user <id|email>]
@@ -120,6 +121,13 @@ module Todos
       --kind (tasks create and tasks update) says what kind of work it is: task (the default, no
       chip), bug, feature, or question; everything but task shows a chip on the card. Give a bug
       or a feature request --kind bug or --kind feature; a client's how-do-I goes as --kind question.
+      --route NAME (todo plan 51) is the herdr AGENT NAME (like cloud or todo, never a tab id) that
+      hears about changes to the to-do at once. tasks create fills it by itself: inside a herdr pane
+      it reads HERDR_PANE_ID and asks herdr agent list for that pane's agent name. Outside a pane, or
+      when the pane has no agent name, it sends no route and prints a warning; the change then goes
+      to the project's manager. --route NAME sends another agent; --no-route sends none. On tasks
+      update, --route NAME sets it and --route "" clears it. Lowercase letters, digits and dashes,
+      40 at most. Only GXB staff and the admin can set it; the server ignores it for anyone else.
       --blocked-by (tasks update, no --user) says what this to-do waits on: a comma list of to-do
       ids (--blocked-by 12,34), each one the caller can open. It REPLACES the set every time;
       --blocked-by "" waits on nothing. The card shows "Blocked by #12 Title" links. Never a
@@ -726,10 +734,13 @@ module Todos
         @args,
         user: true, title: true, project: true, assignee: true, description: true, due: true, due_time: true, estimate: true,
         source_url: true, schema: true, star: true, allow_external: true, priority: true, priority_reason: true,
-        zone: true, do_on: true, no_deadline: true, context: true, email: true, kind: true
+        zone: true, do_on: true, no_deadline: true, context: true, email: true, kind: true, route: true, no_route: true
       )
       ensure_no_args!
       title = required_option!(options[:title], "--title/-t")
+      if options[:no_route] && options.key?(:route)
+        raise Error.new("Pass --route NAME or --no-route, not both", code: "INVALID_ARGUMENT")
+      end
       task = { title: title }
       task[:project_id] = options[:project] if options.key?(:project)
       task[:description] = options[:description] if options.key?(:description)
@@ -746,6 +757,10 @@ module Todos
       task[:estimated_minutes] = options[:estimate] if options.key?(:estimate)
       task[:contexts] = context_names(options) if options.key?(:contexts)
       add_plan_fields!(task, options)
+      # Where changes to this to-do go (plan 51): the herdr agent this runs
+      # in, unless --route or --no-route says otherwise.
+      route = create_route(options)
+      task[:route] = route if route
       # The draft email (plan 44): to and subject are required, and the
       # server refuses without them.
       if (email = email_fields(options))
@@ -792,11 +807,14 @@ module Todos
         @args,
         user: true, title: true, project: true, description: true, due: true, due_time: true,
         estimate: true, source_url: true, schema: true, fields: true, notes: true, priority: true, priority_reason: true,
-        zone: true, do_on: true, no_deadline: true, context: true, email: true, kind: true, blocked_by: true
+        zone: true, do_on: true, no_deadline: true, context: true, email: true, kind: true, blocked_by: true, route: true
       )
       ensure_no_args!
 
       task = {}
+      # --route NAME sets it, --route "" clears it (plan 51). Never filled
+      # from herdr on an edit: only create picks the default.
+      task[:route] = route_name!(options[:route]).to_s if options.key?(:route)
       task[:title] = options[:title] if options.key?(:title)
       task[:project_id] = options[:project] if options.key?(:project)
       task[:description] = options[:description] if options.key?(:description)
@@ -894,6 +912,76 @@ module Todos
       raise Error.new("Pass --do-on DATE or --no-deadline", code: "INVALID_ARGUMENT") if body.empty?
 
       request(:patch, "/tasks/#{id}/plan.json", body: body)
+    end
+
+    ROUTE_FORMAT = /\A[a-z0-9][a-z0-9-]{0,39}\z/
+    ROUTE_WARNING = "No route: run inside a herdr pane, or pass --route NAME (or --no-route). " \
+                    "Changes to this to-do go to the project's manager."
+    HERDR_TIMEOUT = 3
+
+    # The route a new to-do gets (plan 51): --no-route or --route "" sends
+    # none, --route NAME that agent, otherwise the agent of this herdr pane.
+    def create_route(options)
+      return nil if options[:no_route]
+      return route_name!(options[:route]) if options.key?(:route)
+
+      herdr_route
+    end
+
+    # nil for blank; else the exact name (upper case is refused, never
+    # lowered: it must match the herdr agent name exactly).
+    def route_name!(value)
+      name = value.to_s.strip
+      return nil if name.empty?
+      return name if name.match?(ROUTE_FORMAT)
+
+      raise Error.new("--route must be a herdr agent name: lowercase letters, digits and dashes, 40 at most", code: "INVALID_ARGUMENT")
+    end
+
+    # The agent name of the herdr pane this runs in, or nil with a warning.
+    # Never fails the create: a missing herdr, a slow one, or odd output only
+    # means no route.
+    def herdr_route
+      pane = ENV["HERDR_PANE_ID"].to_s.strip
+      name = pane.empty? ? nil : herdr_agent_name(pane)
+      @err.puts(ROUTE_WARNING) unless name
+      name
+    end
+
+    def herdr_agent_name(pane)
+      output = herdr_agent_list
+      return nil unless output
+
+      agents = JSON.parse(output).dig("result", "agents")
+      return nil unless agents.is_a?(Array)
+
+      agent = agents.find { |row| row.is_a?(Hash) && row["pane_id"] == pane }
+      name = agent && agent["name"].to_s
+      name if name&.match?(ROUTE_FORMAT)
+    rescue JSON::ParserError
+      nil
+    end
+
+    def herdr_agent_list
+      Open3.popen2("herdr", "agent", "list", err: File::NULL, pgroup: true) do |stdin, stdout, wait|
+        stdin.close
+        reader = Thread.new { stdout.read }
+        unless wait.join(HERDR_TIMEOUT)
+          # Its own process group: kill herdr and anything it started.
+          begin
+            Process.kill("KILL", -wait.pid)
+          rescue Errno::ESRCH
+            nil
+          end
+          wait.join
+          reader.join(1)
+          return nil
+        end
+        output = reader.value
+        wait.value.success? ? output : nil
+      end
+    rescue SystemCallError
+      nil
     end
 
     def add_plan_fields!(task, options)
@@ -1492,6 +1580,8 @@ module Todos
       end if allowed[:context]
       parser.on("--off") { options[:off] = true } if allowed[:off]
       parser.on("--allow-external") { options[:allow_external] = true } if allowed[:allow_external]
+      parser.on("--route NAME", "herdr agent name that hears about changes (plan 51); \"\" clears on update") { |value| options[:route] = value } if allowed[:route]
+      parser.on("--no-route", "tasks create: send no route (do not read it from herdr)") { options[:no_route] = true } if allowed[:no_route]
       parser.parse!(args)
       options
     rescue OptionParser::ParseError => e
