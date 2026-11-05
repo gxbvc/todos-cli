@@ -62,6 +62,11 @@ These rules apply to every card an agent makes for Christian:
   `tasks ask`) instead of a new card. `tasks create` prints
   `SIMILAR OPEN CARD #id` lines when one may exist; `--new-topic` says it is a
   different topic.
+- **One question, many cards.** When several pieces of work wait on one
+  question, ask it on one card and point the waiting cards at it with
+  `todos-cli tasks update ID --blocked-by CARD`. When he answers, run
+  `todos-cli tasks settle CARD` (or `--ids 12,34`; `--dry-run` first) to close
+  them with "Answered on #CARD".
 - **No card for a decided class.** Cite the rule on the work instead: green CI
   plus the AI merge review for non-law merges, Security's access rules, his
   earlier yes on the same thing, the same kind of data in the same app.
