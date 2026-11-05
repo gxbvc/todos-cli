@@ -4,6 +4,7 @@ require "digest"
 require "json"
 require "open3"
 require "optparse"
+require "set"
 require "time"
 require "uri"
 
@@ -36,7 +37,7 @@ module Todos
         todos-cli tasks list [--user <id|email>] [--project ID] [--status STATUS] [--context NAME,NAME] [--sort priority]
         todos-cli tasks get|show <id> [--user <id|email>]
         todos-cli tasks check -t TITLE [--description MARKDOWN|@file] [--schema JSON|@file]
-        todos-cli tasks create -t TITLE --project ID [--assignee EMAIL] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--kind KIND] [--context NAME,NAME] [--schema JSON|@file] [--star] [--allow-external] [--route NAME | --no-route]
+        todos-cli tasks create -t TITLE --project ID [--assignee EMAIL] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--kind KIND] [--context NAME,NAME] [--schema JSON|@file] [--star] [--allow-external] [--route NAME | --no-route] [--new-topic]
         todos-cli tasks create --user <id|email> -t TITLE [--project ID] [--description MARKDOWN|@file] [--due DATE] [--due-time HH:MM] [--zone ZONE] [--no-deadline] [--do-on DATE] [--priority LEVEL] [--priority-reason TEXT] [--estimate N] [--source-url URL] [--kind KIND] [--schema JSON|@file] [--star] [--route NAME | --no-route]
         todos-cli tasks create/update ... [--email-to ADDRESSES] [--email-cc ADDRESSES] [--email-bcc ADDRESSES] [--email-subject SUBJECT] [--email-body TEXT|@file] [--email-from HINT]
         todos-cli tasks email <id> [--json]
@@ -48,7 +49,7 @@ module Todos
         todos-cli tasks star <id> [--off] [--user <id|email>]
         todos-cli tasks plan <id> [--do-on DATE|""] [--no-deadline]
         todos-cli tasks reopen <id> [--user <id|email>] [--note TEXT] [--reason TEXT]
-        todos-cli tasks cancel <id> [--user <id|email>] [--reason TEXT]
+        todos-cli tasks cancel <id> [--user <id|email>] --reason TEXT
         todos-cli tasks block <id> --reason TEXT
         todos-cli tasks unblock <id> [--note TEXT]
         todos-cli tasks remind <id> --user <id|email>
@@ -113,8 +114,14 @@ module Todos
       Today fills with to-dos nobody planned. Use --due for a real deadline, or --priority.
       --no-deadline says there is no deadline on purpose. tasks plan is the doer's own: --do-on and
       --no-deadline (only while the asker set no deadline).
-      tasks cancel and tasks reopen take --reason TEXT: one line on why, shown in the history. Give it
-      whenever someone else is on the to-do (the web asks for it; the API will require it).
+      tasks cancel needs --reason TEXT: one line on why, shown in the history (Overseer, Nov 5: every
+      withdrawn card says why, for example "Replaced by #123" or "Answered in chat Nov 5").
+      tasks reopen takes --reason TEXT too; give it whenever someone else is on the to-do.
+      One card per topic: tasks create (member route) first reads your open list and prints
+      SIMILAR OPEN CARD #id lines on stderr when an open to-do of yours has a similar title. Add to
+      that card (tasks comment, tasks ask) instead of a new one. It never blocks; --new-topic skips it.
+      Every card for Christian states its expiry and the default if he does not answer
+      (write-human-todos skill).
       --priority is urgent, high, normal (the default), or low. Each person can hold 3 open Urgent
       to-dos from one asker; past that, --priority-reason TEXT is required and goes in the history.
       --star (and tasks star) pins the to-do for you only: pins do not reorder anyone's list.
@@ -735,7 +742,8 @@ module Todos
         @args,
         user: true, title: true, project: true, assignee: true, description: true, due: true, due_time: true, estimate: true,
         source_url: true, schema: true, star: true, allow_external: true, priority: true, priority_reason: true,
-        zone: true, do_on: true, no_deadline: true, context: true, email: true, kind: true, route: true, no_route: true
+        zone: true, do_on: true, no_deadline: true, context: true, email: true, kind: true, route: true, no_route: true,
+        new_topic: true
       )
       ensure_no_args!
       title = required_option!(options[:title], "--title/-t")
@@ -793,6 +801,7 @@ module Todos
         raise Error.new("Pass --user EMAIL for someone's board, or --project ID (and --assignee EMAIL) for a shared project", code: "INVALID_ARGUMENT")
       end
       task[:assignee_email] = options[:assignee] if options.key?(:assignee)
+      warn_similar_open_cards(title, options)
       body = { task: task }
       body[:allow_external] = true if options[:allow_external]
       result = note_external(with_quality(request(:post, "/tasks.json", body: body)))
@@ -1072,8 +1081,60 @@ module Todos
              else
                "/tasks/#{id}/cancel.json"
              end
-      reason = options[:reason].to_s.strip
-      request(:patch, path, body: reason.empty? ? nil : { reason: reason })
+      # Every withdrawn card says why (Overseer, Nov 5): no cancel without a reason.
+      reason = required_option!(options[:reason].to_s.strip, "--reason")
+      request(:patch, path, body: { reason: reason })
+    end
+
+    # One card per topic (Overseer, Nov 5). Before a new to-do lands on my own
+    # list (no --assignee, or --assignee is me), look for an open one of mine
+    # with a similar title and say so on stderr. It never blocks the create and
+    # never fails it: a read error is one note line. --new-topic skips it, and
+    # TODOS_SIMILAR_CHECK=0 turns it off.
+    def warn_similar_open_cards(title, options)
+      return if options[:new_topic] || ENV["TODOS_SIMILAR_CHECK"] == "0"
+
+      payload = @client.request(:get, "/tasks.json", query: { filter: "waiting_on_me" })
+      return unless payload.is_a?(Hash)
+
+      me = payload.dig("user", "email").to_s.downcase
+      return if options.key?(:assignee) && options[:assignee].to_s.strip.downcase != me
+
+      matches = Array(payload["tasks"]).select { |t| t.is_a?(Hash) && similar_title?(title, t["title"].to_s) }.first(3)
+      matches.each do |t|
+        @err.puts("SIMILAR OPEN CARD ##{t["id"]}: #{t["title"]} (https://todo.gxb.vc/tasks/#{t["id"]})")
+      end
+      return if matches.empty?
+
+      @err.puts("One card per topic (Overseer, Nov 5): add to the open card instead (tasks comment or tasks ask), " \
+                "and cancel this one with --reason if it repeats it. Pass --new-topic when it is a different topic.")
+    rescue StandardError => e
+      @err.puts("Similar-card check skipped: #{e.message.to_s[0, 120]}")
+    end
+
+    SIMILAR_STOP_WORDS = %w[the a an and or to of for on in at by with from your you my is are be it this that as into].freeze
+
+    def title_words(text)
+      text.downcase.sub(/\A\[[^\]]*\]\s*/, "").gsub(/[^a-z0-9 ]/, " ").split.reject { |w| w.length < 2 || SIMILAR_STOP_WORDS.include?(w) }
+    end
+
+    def title_grams(words)
+      joined = " #{words.join(" ")} "
+      (0..joined.length - 3).map { |i| joined[i, 3] }.to_set
+    end
+
+    # Similar = the same words after cleanup, or a character-trigram Dice
+    # score of 0.72 or more with at least 3 words in common.
+    def similar_title?(a, b)
+      wa = title_words(a)
+      wb = title_words(b)
+      return false if wa.empty? || wb.empty?
+      return true if wa == wb
+      return false if (wa & wb).size < 3
+
+      ga = title_grams(wa)
+      gb = title_grams(wb)
+      (2.0 * (ga & gb).size / (ga.size + gb.size)) >= 0.72
     end
 
     # The assignee cannot do an open to-do someone else gave them without
@@ -1587,6 +1648,7 @@ module Todos
       parser.on("--keep-file", "Secret: do not delete the file afterwards") { options[:keep_file] = true } if allowed[:keep_file]
       parser.on("--at DATE", "Link: when it ends (YYYY-MM-DD or an ISO 8601 time)") { |value| options[:at] = link_time(value) } if allowed[:at]
       parser.on("--star") { options[:star] = true } if allowed[:star]
+      parser.on("--new-topic", "Create: skip the similar open card check (a different topic)") { options[:new_topic] = true } if allowed[:new_topic]
       parser.on("--sort VALUE", "tasks list: priority sorts urgent, high, normal, low, then due date") { |value| options[:sort] = value } if allowed[:sort]
       parser.on("--context NAME", "My GTD context on the to-do: office, phone, errands, bike, home. Repeatable, or a comma list; \"\" clears") do |value|
         (options[:contexts] ||= []).concat(value.split(","))

@@ -229,16 +229,16 @@ class TodosCliTest < Minitest::Test
         body: nil
       },
       {
-        args: %w[tasks cancel 9 --user 7],
+        args: [ "tasks", "cancel", "9", "--user", "7", "--reason", "Replaced by #12" ],
         method: "PATCH",
         target: "/users/7/tasks/9/cancel.json",
-        body: nil
+        body: { "reason" => "Replaced by #12" }
       },
       {
-        args: %w[tasks cancel 9],
+        args: [ "tasks", "cancel", "9", "--reason", "Answered in chat" ],
         method: "PATCH",
         target: "/tasks/9/cancel.json",
-        body: nil
+        body: { "reason" => "Answered in chat" }
       },
       {
         args: %w[tasks remind 9 --user 7],

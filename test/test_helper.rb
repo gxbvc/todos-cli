@@ -96,7 +96,9 @@ module CLITestHelpers
       # Tests never read the herdr pane they run in, nor run a real route command (plan 51).
       "HERDR_PANE_ID" => nil,
       "TODOS_ROUTE" => nil,
-      "TODOS_ROUTE_COMMAND" => "/nonexistent/todos-cli-test-route-command"
+      "TODOS_ROUTE_COMMAND" => "/nonexistent/todos-cli-test-route-command",
+      # The one-card-per-topic read (Overseer, Nov 5) is off unless a test turns it on.
+      "TODOS_SIMILAR_CHECK" => "0"
     }.merge(env)
     stdout, stderr, status = Open3.capture3(process_env, executable, *args, chdir: cwd, stdin_data: stdin)
     server.finish
