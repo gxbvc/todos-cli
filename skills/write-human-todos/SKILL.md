@@ -42,6 +42,30 @@ Every todo has one of three shapes:
 3. **A one-tap pick**, only when you truly cannot choose. One radio field, 2 or 3
    options, recommended first, each with a short example.
 
+## Cards for Christian (Overseer, Nov 5)
+
+These rules apply to every card an agent makes for Christian:
+
+- **Expiry and default.** The description ends with one line that says when
+  the card expires and what happens if he does not answer:
+  `**If no answer by Fri Nov 7, 5 PM CT:** I keep the old key and close this card.`
+  Only the card's owning manager writes this line, and only once. Never add an
+  expiry to another manager's card.
+- **Withdraw fast, with a reason.** When a card is replaced, answered
+  elsewhere, or moot, cancel it within the hour with a reason:
+  `todos-cli tasks cancel <id> --reason "Replaced by #123"`. The tool refuses
+  a cancel without `--reason`.
+- **Answered elsewhere.** The tab that gets his answer anywhere (iMessage,
+  GXBot, chat, a voice memo) answers or closes his open card on that topic at
+  once, with a comment that says where he answered.
+- **One card per topic.** Add to his open card on the same topic (a comment or
+  `tasks ask`) instead of a new card. `tasks create` prints
+  `SIMILAR OPEN CARD #id` lines when one may exist; `--new-topic` says it is a
+  different topic.
+- **No card for a decided class.** Cite the rule on the work instead: green CI
+  plus the AI merge review for non-law merges, Security's access rules, his
+  earlier yes on the same thing, the same kind of data in the same app.
+
 ## Todo rules
 
 A todo is a physical, visible act. A watcher could see the keyboard, phone,
@@ -275,6 +299,8 @@ Before `tasks create`, delete or fix:
 7. Any decision you could have made yourself.
 8. Any hedge: `might`, `probably`, `you may want to`.
 9. Any check that failed in `tasks check` or `todos_check_quality`.
+10. On a card for Christian: a missing expiry-and-default line, or a topic he
+    already has an open card for.
 
 Then check: from the title and first sentence alone, do they know what to
 physically do, and where? If not, rewrite it.
