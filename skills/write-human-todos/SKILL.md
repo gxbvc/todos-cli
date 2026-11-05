@@ -46,11 +46,12 @@ Every todo has one of three shapes:
 
 These rules apply to every card an agent makes for Christian:
 
-- **Expiry and default.** The description ends with one line that says when
-  the card expires and what happens if he does not answer:
-  `**If no answer by Fri Nov 7, 5 PM CT:** I keep the old key and close this card.`
-  Only the card's owning manager writes this line, and only once. Never add an
-  expiry to another manager's card.
+- **Nothing happens because he did not answer** (Christian, Nov 5). No card
+  sends, ships, cancels, turns off, builds, or closes itself on his silence.
+  Never write an expiry or a "default if no answer" line. If the work truly
+  needs an answer by a time, give a plain deadline and say what happens to the
+  WORK, for example: `**Deadline:** Fri Nov 7, 5 PM CT. Until you answer, the
+  email waits.`
 - **Withdraw fast, with a reason.** When a card is replaced, answered
   elsewhere, or moot, cancel it within the hour with a reason:
   `todos-cli tasks cancel <id> --reason "Replaced by #123"`. The tool refuses
@@ -304,8 +305,9 @@ Before `tasks create`, delete or fix:
 7. Any decision you could have made yourself.
 8. Any hedge: `might`, `probably`, `you may want to`.
 9. Any check that failed in `tasks check` or `todos_check_quality`.
-10. On a card for Christian: a missing expiry-and-default line, or a topic he
-    already has an open card for.
+10. On a card for Christian: any action that would happen on his silence (an
+    expiry, a default, an auto-send, an auto-close), or a topic he already has
+    an open card for.
 
 Then check: from the title and first sentence alone, do they know what to
 physically do, and where? If not, rewrite it.

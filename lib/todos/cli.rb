@@ -121,8 +121,8 @@ module Todos
       One card per topic: tasks create (member route) first reads your open list and prints
       SIMILAR OPEN CARD #id lines on stderr when an open to-do of yours has a similar title. Add to
       that card (tasks comment, tasks ask) instead of a new one. It never blocks; --new-topic skips it.
-      Every card for Christian states its expiry and the default if he does not answer
-      (write-human-todos skill).
+      Nothing on a card happens because Christian did not answer: no expiry, no default action
+      (Christian, Nov 5; write-human-todos skill).
       tasks settle N closes the cards that wait on the same question once N is answered (submitted or
       approved): the ids in --ids, or without --ids your own open cards whose --blocked-by names N. Each is
       canceled with the reason "Answered on #N" (and --reason TEXT after it). --dry-run lists them
