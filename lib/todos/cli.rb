@@ -50,6 +50,7 @@ module Todos
         todos-cli tasks plan <id> [--do-on DATE|""] [--no-deadline]
         todos-cli tasks reopen <id> [--user <id|email>] [--note TEXT] [--reason TEXT]
         todos-cli tasks cancel <id> [--user <id|email>] --reason TEXT
+        todos-cli tasks settle <answered_id> [--ids IDS] [--reason TEXT] [--dry-run]
         todos-cli tasks block <id> --reason TEXT
         todos-cli tasks unblock <id> [--note TEXT]
         todos-cli tasks remind <id> --user <id|email>
@@ -122,6 +123,10 @@ module Todos
       that card (tasks comment, tasks ask) instead of a new one. It never blocks; --new-topic skips it.
       Every card for Christian states its expiry and the default if he does not answer
       (write-human-todos skill).
+      tasks settle N closes the cards that wait on the same question once N is answered (submitted or
+      approved): the ids in --ids, or without --ids your own open cards whose --blocked-by names N. Each is
+      canceled with the reason "Answered on #N" (and --reason TEXT after it). --dry-run lists them
+      first. It prints closed (or would_close), skipped (with why), and how many cards it read.
       --priority is urgent, high, normal (the default), or low. Each person can hold 3 open Urgent
       to-dos from one asker; past that, --priority-reason TEXT is required and goes in the history.
       --star (and tasks star) pins the to-do for you only: pins do not reorder anyone's list.
@@ -587,6 +592,7 @@ module Todos
       when "submit" then tasks_submit
       when "reopen" then tasks_reopen
       when "cancel" then tasks_cancel
+      when "settle" then tasks_settle
       when "block" then tasks_block
       when "unblock" then tasks_unblock
       when "remind" then tasks_remind
@@ -1084,6 +1090,100 @@ module Todos
       # Every withdrawn card says why (Overseer, Nov 5): no cancel without a reason.
       reason = required_option!(options[:reason].to_s.strip, "--reason")
       request(:patch, path, body: { reason: reason })
+    end
+
+    SETTLE_OPEN = %w[open blocked].freeze
+
+    # tasks settle N (Overseer, Nov 5): one answered card closes the cards that
+    # wait on the same question. N must be answered (submitted or approved).
+    # Targets: the ids in --ids (any open card the caller may cancel), or,
+    # without --ids, the caller's OWN open cards (assigner is the caller) whose
+    # blocked_by names N.
+    # Those are read from N's "blocking" list when the server sends one, else
+    # found by reading the caller's own open cards one by one. Each target is
+    # canceled with the reason "Answered on #N" (plus --reason TEXT). --dry-run
+    # lists them and changes nothing. Prints what it closed and what it skipped.
+    def tasks_settle
+      id = required_positional!("answered card id").to_s
+      raise Error.new("The card id must be a number", code: "INVALID_ARGUMENT") unless id.match?(/\A\d+\z/)
+
+      options = parse_options(@args, reason: true, ids: true, dry_run: true)
+      ensure_no_args!
+      card = request(:get, "/my_tasks/#{id}.json")
+      unless %w[submitted approved].include?(card["status"])
+        raise Error.new("##{id} is #{card["status"]}: settle needs an answered card (submitted or approved)", code: "INVALID_ARGUMENT")
+      end
+
+      extra = options[:reason].to_s.strip
+      reason = extra.empty? ? "Answered on ##{id}" : "Answered on ##{id}: #{extra}"
+      listed = Array(options[:ids]).map(&:to_s).uniq - [ id ]
+      # --ids names the targets; without it, the caller's own waiting cards are found.
+      found, scanned = listed.empty? ? settle_owned_waiting(card, id) : [ [], 0 ]
+      targets = listed.map { |t| [ t, nil ] } + found.reject { |t| listed.include?(t["id"].to_s) }.map { |t| [ t["id"].to_s, t ] }
+
+      closed = []
+      skipped = []
+      targets.each do |tid, task|
+        task ||= begin
+          request(:get, "/my_tasks/#{tid}.json")
+        rescue Error => e
+          skipped << { id: tid.to_i, why: e.message.to_s[0, 160] }
+          next
+        end
+        row = { id: task["id"], title: task["title"] }
+        unless SETTLE_OPEN.include?(task["status"])
+          skipped << row.merge(why: "already #{task["status"]}")
+          next
+        end
+        if options[:dry_run]
+          closed << row
+          next
+        end
+        begin
+          request(:patch, "/tasks/#{tid}/cancel.json", body: { reason: reason })
+          closed << row
+          @err.puts("Closed ##{tid}: #{task["title"]}")
+        rescue Error => e
+          skipped << row.merge(why: e.message.to_s[0, 160])
+        end
+      end
+      { card: { id: card["id"], title: card["title"], status: card["status"] }, reason: reason, dry_run: options[:dry_run] ? true : false,
+        (options[:dry_run] ? :would_close : :closed) => closed, skipped: skipped, scanned: scanned }
+    end
+
+    # The caller's own open cards that wait on N. Uses N's "blocking" list
+    # when the server sends it; else reads every open card the caller owns
+    # (filter=all, assigner is me) and checks its blocked_by.
+    def settle_owned_waiting(card, id)
+      me = nil
+      rows = []
+      offset = 0
+      loop do
+        page = @client.request(:get, "/tasks.json", query: { filter: "all", limit: 500, offset: offset })
+        me ||= page.dig("user", "id")
+        rows.concat(Array(page["tasks"]))
+        offset = page["next_offset"]
+        break unless offset
+      end
+      owned = rows.select { |t| SETTLE_OPEN.include?(t["status"]) && t["assigner_id"] == me && t["id"].to_s != id }
+      if card["blocking"].is_a?(Array)
+        ids = card["blocking"].map { |b| b["id"].to_s }
+        return [ owned.select { |t| ids.include?(t["id"].to_s) }, 0 ]
+      end
+
+      threads = [ ENV.fetch("TODOS_SETTLE_THREADS", "4").to_i, 1 ].max
+      queue = Queue.new
+      owned.each { |t| queue << t }
+      found = Queue.new
+      Array.new(threads) do
+        Thread.new do
+          while (t = (queue.pop(true) rescue nil))
+            full = (request(:get, "/my_tasks/#{t["id"]}.json") rescue nil)
+            found << full if full && Array(full["blocked_by"]).any? { |b| b["id"].to_s == id }
+          end
+        end
+      end.each(&:join)
+      [ Array.new(found.size) { found.pop }.sort_by { |t| t["id"].to_i }, owned.size ]
     end
 
     # One card per topic (Overseer, Nov 5). Before a new to-do lands on my own
@@ -1649,6 +1749,8 @@ module Todos
       parser.on("--at DATE", "Link: when it ends (YYYY-MM-DD or an ISO 8601 time)") { |value| options[:at] = link_time(value) } if allowed[:at]
       parser.on("--star") { options[:star] = true } if allowed[:star]
       parser.on("--new-topic", "Create: skip the similar open card check (a different topic)") { options[:new_topic] = true } if allowed[:new_topic]
+      parser.on("--ids IDS", "Settle: also close these to-do ids (comma list)") { |value| options[:ids] = value.split(",").map(&:strip).reject(&:empty?).each { |v| raise Error.new("--ids takes numbers", code: "INVALID_ARGUMENT") unless v.match?(/\A\d+\z/) } } if allowed[:ids]
+      parser.on("--dry-run", "Settle: list what it would close, change nothing") { options[:dry_run] = true } if allowed[:dry_run]
       parser.on("--sort VALUE", "tasks list: priority sorts urgent, high, normal, low, then due date") { |value| options[:sort] = value } if allowed[:sort]
       parser.on("--context NAME", "My GTD context on the to-do: office, phone, errands, bike, home. Repeatable, or a comma list; \"\" clears") do |value|
         (options[:contexts] ||= []).concat(value.split(","))
