@@ -460,6 +460,21 @@ def test_tasks_comments_lists_the_thread_from_my_route
   assert_equal [ "Add Tuesday" ], output["data"].map { |comment| comment["body"] }
 end
 
+# Overseer, Nov 5: an agent's comment prints shown_author, never the key
+# owner's name.
+def test_tasks_get_prints_shown_author_for_an_agent_comment
+  task = { id: 677, comments: [ { id: 5, kind: "comment", body: "Feed is back up", shown_author: "todo-author",
+                                 author: { id: 1, name: "Christian Genco" }, at: "2026-11-05T22:00:00Z" } ],
+           description: nil }
+  server = StubServer.new({ body: JSON.generate(task) })
+
+  _output, stderr, status = run_cli("tasks", "get", "677", server: server)
+
+  assert status.success?
+  assert_includes stderr, "todo-author, Nov 5"
+  refute_includes stderr, "Christian Genco"
+end
+
 def test_tasks_versions_lists_old_text_newest_first
   body = { task_id: 677, versions: [ { id: 9, created_at: "2026-10-07T20:00:00Z", by: { id: 1, name: "Christian Genco" },
                                        changes: { description: [ "Old", "New" ] } } ] }

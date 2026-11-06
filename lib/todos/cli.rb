@@ -1806,7 +1806,10 @@ module Todos
       @err.puts("Comments (#{comments.size}):")
       comments.each do |comment|
         label = COMMENT_LABELS[comment["kind"]]
-        head = [ comment.dig("author", "name") || "Someone", comment_time(comment["at"]) ].compact.join(", ")
+        # An agent's comment (todo, Overseer Nov 5): shown_author is the
+        # name the card shows, never the key owner's name.
+        who = comment["shown_author"] || comment.dig("author", "name") || "Someone"
+        head = [ who, comment_time(comment["at"]) ].compact.join(", ")
         head += " [#{label}]" if label
         @err.puts("  #{head}:")
         comment["body"].to_s.each_line { |line| @err.puts("    #{line.chomp}") }
