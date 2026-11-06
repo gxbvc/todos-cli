@@ -161,7 +161,8 @@ module Todos
       --file PATH (repeat it, up to 10, 25 MB each, any type) attaches files to the comment; with
       files the text may be left out. Each comment's files are {id, filename, content_type, byte_size,
       url}; the url checks access and redirects to a short-lived link. --as NAME (an API-key write)
-      shows the comment as that agent name, not as the key's owner.
+      shows the comment as that agent name, not as the key's owner. Agents always pass --as with
+      their manager or lane name (for example --as "Drive manager"); a person's name is refused.
       tasks versions <id> lists the old copies of the title, description, and fields, newest first:
       {id, created_at, by, changes: {description: [old, new]}}. Never answers.
       Questions on a to-do (todo plan 45b): tasks ask asks the other person on the

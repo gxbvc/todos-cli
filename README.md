@@ -367,7 +367,9 @@ doing it, the person who asked, and the reviewer can comment in any status:
 open, blocked, in review, done, or canceled. A comment never changes the
 status. The text is markdown. `tasks comment` posts as you on the member route
 (`POST /tasks/:id/comments.json`); there is no `--user`. `--as NAME` (an API-key
-write) shows the comment as that agent name, not as the key's owner. `tasks comments` lists
+write) shows the comment as that agent name, not as the key's owner. Agents
+always pass `--as` with their manager or lane name, for example
+`--as "Drive manager"`; a person's name is refused. `tasks comments` lists
 the thread (`GET /my_tasks/:id.json`), and `tasks get` prints it on stderr
 under the quality lines. A send back, a block reason, and an unblock note are
 in the thread too, with `kind` `changes_requested`, `blocked`, or `unblocked`.

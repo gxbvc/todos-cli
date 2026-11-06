@@ -219,6 +219,10 @@ For one quick decision on a to-do that already exists, ask it there instead of
 filing a new to-do: `todos-cli tasks ask <id> "Which carrier?" --option UPS
 --option FedEx` (todo plan 45b). The answer comes back as a comment.
 
+When you comment on a card, pass `--as` with your agent name
+(`todos-cli tasks comment ID "text" --as "Drive manager"`), so the card shows
+who wrote it and not Christian.
+
 ## Email to-dos
 
 When the action is "send this email", use the email type (`todos-cli tasks
