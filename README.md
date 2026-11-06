@@ -358,6 +358,7 @@ patches `/tasks/:id.json`; with it, the nested admin update route.
 todos-cli tasks comment 99 "Can you add the Tuesday batch?"
 todos-cli tasks comment 99 @reply.md
 todos-cli tasks comment 99 "Here is the error" --file shot.png --file trace.log
+todos-cli tasks comment 99 "Feed is back up" --as todo-author
 todos-cli tasks comments 99
 ```
 
@@ -365,7 +366,8 @@ Notes are comments now (todo plan 23). Each to-do has a thread. The person
 doing it, the person who asked, and the reviewer can comment in any status:
 open, blocked, in review, done, or canceled. A comment never changes the
 status. The text is markdown. `tasks comment` posts as you on the member route
-(`POST /tasks/:id/comments.json`); there is no `--user`. `tasks comments` lists
+(`POST /tasks/:id/comments.json`); there is no `--user`. `--as NAME` (an API-key
+write) shows the comment as that agent name, not as the key's owner. `tasks comments` lists
 the thread (`GET /my_tasks/:id.json`), and `tasks get` prints it on stderr
 under the quality lines. A send back, a block reason, and an unblock note are
 in the thread too, with `kind` `changes_requested`, `blocked`, or `unblocked`.

@@ -381,6 +381,20 @@ def test_tasks_comment_posts_on_the_member_route
   assert_equal "Any update?", output.dig("data", "body")
 end
 
+# Overseer, Nov 5: --as sends agent_name, so the card names the agent.
+def test_tasks_comment_as_sends_agent_name
+  comment = { id: 6, kind: "comment", body: "Feed is back up", agent_name: "todo-author",
+              shown_author: "todo-author", author: { id: 1, name: "Christian Genco" }, at: "2026-11-05T22:00:00Z" }
+  server = StubServer.new({ status: 201, body: JSON.generate(comment) })
+
+  output, _stderr, status = run_cli("tasks", "comment", "677", "Feed is back up", "--as", "  todo-author ", server: server)
+  request = server.requests.pop
+
+  assert status.success?
+  assert_equal({ "body" => "Feed is back up", "agent_name" => "todo-author" }, json_body(request))
+  assert_equal "todo-author", output.dig("data", "shown_author")
+end
+
 def test_tasks_comment_reads_a_file_and_needs_text
   Dir.mktmpdir do |dir|
     path = File.join(dir, "reply.md")

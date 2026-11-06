@@ -55,7 +55,7 @@ module Todos
         todos-cli tasks unblock <id> [--note TEXT]
         todos-cli tasks remind <id> --user <id|email>
         todos-cli tasks respond <id> [--user <id|email>] --field key=value [--field key=value]
-        todos-cli tasks comment <id> ["TEXT"|@file.md] [--file PATH ...]
+        todos-cli tasks comment <id> ["TEXT"|@file.md] [--file PATH ...] [--as NAME]
         todos-cli tasks comments <id>
         todos-cli tasks ask <task_id> BODY|@file.md [--kind question|approval|unblock] [--option TEXT ...] [--allow-text] [--to EMAIL]
         todos-cli questions list [--status open|answered|withdrawn] [--asked-by me]
@@ -160,7 +160,8 @@ module Todos
       never changes the status. tasks comments <id> lists the thread; tasks get prints it on stderr.
       --file PATH (repeat it, up to 10, 25 MB each, any type) attaches files to the comment; with
       files the text may be left out. Each comment's files are {id, filename, content_type, byte_size,
-      url}; the url checks access and redirects to a short-lived link.
+      url}; the url checks access and redirects to a short-lived link. --as NAME (an API-key write)
+      shows the comment as that agent name, not as the key's owner.
       tasks versions <id> lists the old copies of the title, description, and fields, newest first:
       {id, created_at, by, changes: {description: [old, new]}}. Never answers.
       Questions on a to-do (todo plan 45b): tasks ask asks the other person on the
@@ -1291,11 +1292,13 @@ module Todos
     # reviewer may post, in any status, and the status never changes.
     # "@file.md" reads a file; the text is markdown. --file PATH (repeatable)
     # attaches files (todo plan 32), sent as multipart files[]; with files
-    # the text may be left out. data is the comment
-    # {id, kind, body, author, at, files}.
+    # the text may be left out. --as NAME (todo, Overseer Nov 5) sends
+    # agent_name, shown only on an API-key write: the card names the agent
+    # instead of the key's owner. data is the comment
+    # {id, kind, body, author, agent_name, shown_author, at, files}.
     def tasks_comment
       id = required_positional!("task id")
-      options = parse_options(@args, files: true)
+      options = parse_options(@args, files: true, as: true)
       text = @args.shift.to_s
       ensure_no_args!
       text = comment_text(text)
@@ -1303,9 +1306,9 @@ module Todos
       if text.strip.empty? && paths.empty?
         raise Error.new("Missing comment text (or @file.md, or --file PATH)", code: "INVALID_ARGUMENT")
       end
-      return post_comment(id, text) if paths.empty?
+      return post_comment(id, text, agent_name: options[:as]) if paths.empty?
 
-      post_comment_with_files(id, text, paths)
+      post_comment_with_files(id, text, paths, agent_name: options[:as])
     end
 
     COMMENT_FILE_LIMIT = 10
@@ -1316,7 +1319,7 @@ module Todos
       ".mp4" => "video/mp4", ".mov" => "video/quicktime", ".mp3" => "audio/mpeg", ".m4a" => "audio/mp4"
     }.freeze
 
-    def post_comment_with_files(id, text, paths)
+    def post_comment_with_files(id, text, paths, agent_name: nil)
       if paths.size > COMMENT_FILE_LIMIT
         raise Error.new("Attach #{COMMENT_FILE_LIMIT} files at most", code: "INVALID_ARGUMENT")
       end
@@ -1329,6 +1332,7 @@ module Todos
       end
       opened = files.map { |path| File.open(path, "rb") }
       form = [ [ "body", text ] ]
+      form << [ "agent_name", agent_name ] if agent_name
       opened.each_with_index do |io, index|
         name = File.basename(files[index])
         type = CONTENT_TYPES.fetch(File.extname(name).downcase, "application/octet-stream")
@@ -1517,7 +1521,11 @@ module Todos
       { task_id: id.to_i, key: key, secret: result.is_a?(Hash) ? result["secret"] : nil }
     end
 
-    def post_comment(id, text) = request(:post, "/tasks/#{id}/comments.json", body: { body: text })
+    def post_comment(id, text, agent_name: nil)
+      body = { body: text }
+      body[:agent_name] = agent_name if agent_name
+      request(:post, "/tasks/#{id}/comments.json", body: body)
+    end
 
     # One structured question on a to-do (todo plan 45b, POST
     # /tasks/:id/questions.json): the person who may comment asks one person a
@@ -1734,6 +1742,7 @@ module Todos
       parser.on("--notes TEXT") { |value| options[:notes] = value } if allowed[:notes]
       parser.on("--note TEXT") { |value| options[:note] = value } if allowed[:note]
       parser.on("--file PATH", "Attach a file (repeatable)") { |value| (options[:files] ||= []) << value } if allowed[:files]
+      parser.on("--as NAME", "tasks comment: show the comment as this agent name (an API key write), not as the key's owner") { |value| options[:as] = value.strip } if allowed[:as]
       parser.on("--option TEXT", "Question: a short answer to pick (repeatable, 0 to 6, recommended first)") { |value| (options[:options] ||= []) << value } if allowed[:option]
       parser.on("--allow-text", "Question: let the person answer in text as well") { options[:allow_text] = true } if allowed[:allow_text]
       parser.on("--to EMAIL", "Question: who to ask (default: whose turn it is on the to-do)") { |value| options[:to] = value.strip } if allowed[:to]
