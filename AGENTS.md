@@ -22,6 +22,10 @@ todos-cli projects invite <id> --email EMAIL
 todos-cli invites list
 todos-cli invites accept <id> [--area ID]
 todos-cli contexts
+todos-cli inbox create BODY|@file.md [-t TITLE] [--kind voice_memo|meeting|email|text|chat|note] [--owner-email EMAIL] [--as NAME]
+todos-cli inbox list [--cursor CURSOR] [--limit N]
+todos-cli inbox show <id>
+todos-cli inbox message <id> BODY|@file.md [--as NAME]
 todos-cli tasks list [--user <id|email>] [--project ID] [--status open|submitted|approved|canceled] [--context NAME,NAME] [--sort priority]
 todos-cli tasks get|show <id> [--user <id|email>]
 todos-cli tasks check -t TITLE [--description MARKDOWN|@file] [--schema JSON|@file]
@@ -50,6 +54,8 @@ todos-cli webhooks create --url URL [--events TYPE,TYPE|*] [--description TEXT]
 todos-cli webhooks update <id> [--url URL] [--events TYPE,TYPE|*] [--description TEXT] [--active true|false]
 todos-cli webhooks delete|rotate|test|deliveries <id>
 ```
+
+`inbox create` makes one inbox thread and its first message (`POST /inbox_threads.json`). The default kind is `text`; valid kinds are `voice_memo`, `meeting`, `email`, `text`, `chat`, and `note`. If `-t` is omitted, the server takes the title from the first line of the body. `@file.md` reads the body from a file. Without `--owner-email`, the API key owner's own inbox is used and the first message is authored by that person. Only an agent key may use `--owner-email`, and the server checks access to that inbox. `--as` sets `agent_name` on API-key writes; it never changes the author. `inbox list` returns `{items,next_cursor}` from the server: pass `next_cursor` to `--cursor` for the next page. `inbox show` returns the full thread. `inbox message` posts a follow-up on a thread the key can access. IDs must be numeric. No proposal or approval commands are included.
 
 `events` is one read of every change after `--after` (`GET /events.json?after_id=N&limit=200`, max 500), oldest first, on to-dos the key's owner can open (the admin too: no wider). It prints the whole reply `{events, next_after_id, more}`; pass `next_after_id` as the next `--after`, and call again at once while `more` is true. Each event: `type` (the webhook type), `kind`, `at`, `actor`, `via` (`web`, `api`, `oauth`, `system`, or null), `via_key` (the key's name, only on the caller's own changes), `from_status`, `to_status`, `data` (webhook keys only), `task {id, title, status, project_id, project_title, user_id, assigner_id, url}`.
 

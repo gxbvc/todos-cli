@@ -95,6 +95,28 @@ todos-cli invites accept project-4 --area 3
 todos-cli invites accept area-2
 ```
 
+### Inbox threads
+
+```bash
+todos-cli inbox create "Note to review" --kind note
+todos-cli inbox create @capture.md --owner-email christian@gxb.vc --as GXBot
+todos-cli inbox list --limit 20
+todos-cli inbox list --cursor CURSOR_FROM_NEXT_CURSOR
+todos-cli inbox show 12
+todos-cli inbox message 12 @reply.md --as GXBot
+```
+
+`inbox create` posts the first message using the API key's identity. It defaults
+`--kind` to `text`; other kinds are `voice_memo`, `meeting`, `email`, `chat`, and
+`note`. If `-t TITLE` is absent, the server takes the title from the body's
+first line. Use `@file.md` for a multiline body. Without `--owner-email`, the
+thread goes into the API key owner's inbox. Only an agent key can use
+`--owner-email`, subject to the server's access checks. `--as` sets the shown
+agent name on API-key messages, not the author. `inbox list` returns the
+server's `{items, next_cursor}`; pass `next_cursor` to `--cursor` for the next
+page. `inbox show` returns the full thread. Show and message use the thread's
+bound access rules. These commands do not create proposals or approve work.
+
 ### Kind
 
 ```bash

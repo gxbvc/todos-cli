@@ -15,6 +15,7 @@ module Todos
   class CLI
     STATUSES = %w[open submitted approved canceled blocked].freeze
     PROJECT_STATUSES = %w[active waiting someday completed].freeze
+    INBOX_KINDS = %w[voice_memo meeting email text chat note].freeze
     USAGE = <<~TEXT.freeze
       Usage:
         todos-cli me
@@ -34,6 +35,10 @@ module Todos
         todos-cli invites list
         todos-cli invites accept <id> [--area ID]
         todos-cli contexts
+        todos-cli inbox create BODY|@file.md [-t TITLE] [--kind voice_memo|meeting|email|text|chat|note] [--owner-email EMAIL] [--as NAME]
+        todos-cli inbox list [--cursor CURSOR] [--limit N]
+        todos-cli inbox show <id>
+        todos-cli inbox message <id> BODY|@file.md [--as NAME]
         todos-cli tasks list [--user <id|email>] [--project ID] [--status STATUS] [--context NAME,NAME] [--sort priority]
         todos-cli tasks get|show <id> [--user <id|email>]
         todos-cli tasks check -t TITLE [--description MARKDOWN|@file] [--schema JSON|@file]
@@ -154,6 +159,11 @@ module Todos
       (the descriptions say what each means; make them on /settings). --context is the
       member route only: with --user it is refused (the admin route cannot set another
       person's contexts).
+      inbox create sends a first message as the API key's owner. The default kind is text; without
+      -t the server uses the first line of the body as the title. Only an agent key may use
+      --owner-email, subject to the server's access rules. --as sets agent_name on API-key writes;
+      it does not change the author. inbox list returns {items, next_cursor}; pass next_cursor to
+      --cursor for the next page. inbox show and message use the thread's bound access rules.
       tasks update without --user is the asker's edit (PATCH /tasks/:id); with --user, the admin's.
       Notes are comments now. tasks comment <id> "TEXT" (or @file.md, markdown) posts one as you: the
       person doing it, the person who asked, and the reviewer can comment in any status, and a comment
@@ -295,6 +305,7 @@ module Todos
       when "tasks" then tasks
       when "invites" then invites
       when "contexts" then contexts
+      when "inbox" then inbox
       when "questions" then questions
       when "webhooks" then webhooks
       when "help", "-h", "--help", nil then { usage: USAGE }
@@ -516,6 +527,74 @@ module Todos
 
       noun = count == 1 ? "invite" : "invites"
       @err.puts("You have #{count} open #{noun}. Run: todos-cli invites list")
+    end
+
+    def inbox
+      subcommand = @args.shift
+      case subcommand
+      when "create" then inbox_create
+      when "list" then inbox_list
+      when "show" then inbox_show
+      when "message" then inbox_message
+      else
+        fail_usage!("Usage: todos-cli inbox <create|list|show|message>")
+      end
+    end
+
+    def inbox_create
+      options = parse_options(@args, title: true, kind: true, owner_email: true, as: true)
+      body = @args.shift.to_s
+      ensure_no_args!
+      body = inline_or_file_text(body, "Inbox body")
+      raise Error.new("Inbox body is required", code: "INVALID_ARGUMENT") if body.strip.empty?
+      if options.key?(:owner_email) && options[:owner_email].strip.empty?
+        raise Error.new("Inbox owner email cannot be blank", code: "INVALID_ARGUMENT")
+      end
+
+      kind = options.fetch(:kind, "text")
+      unless INBOX_KINDS.include?(kind)
+        raise Error.new("Inbox kind must be one of: #{INBOX_KINDS.join(', ')}", code: "INVALID_ARGUMENT")
+      end
+      payload = { kind: kind, body: body }
+      payload[:title] = options[:title] if options.key?(:title)
+      payload[:owner_email] = options[:owner_email] if options.key?(:owner_email)
+      payload[:agent_name] = options[:as] if options.key?(:as)
+      request(:post, "/inbox_threads.json", body: payload)
+    end
+
+    def inbox_list
+      options = parse_options(@args, cursor: true, limit: true)
+      ensure_no_args!
+      query = {}
+      query[:cursor] = options[:cursor] if options.key?(:cursor)
+      query[:limit] = options[:limit] if options.key?(:limit)
+      @client.request(:get, "/inbox_threads.json", query: query)
+    end
+
+    def inbox_show
+      id = inbox_id!
+      ensure_no_args!
+      request(:get, "/inbox_threads/#{id}.json")
+    end
+
+    def inbox_message
+      id = inbox_id!
+      options = parse_options(@args, as: true)
+      body = @args.shift.to_s
+      ensure_no_args!
+      body = inline_or_file_text(body, "Inbox body")
+      raise Error.new("Inbox body is required", code: "INVALID_ARGUMENT") if body.strip.empty?
+
+      payload = { body: body }
+      payload[:agent_name] = options[:as] if options.key?(:as)
+      request(:post, "/inbox_threads/#{id}/messages.json", body: payload)
+    end
+
+    def inbox_id!
+      id = required_positional!("inbox thread id")
+      raise Error.new("Inbox thread id must be numeric", code: "INVALID_ARGUMENT") unless id.match?(/\A\d+\z/)
+
+      id
     end
 
     # My webhooks (todo plan 25). Only mine: anyone else's id is HTTP_404.
@@ -1702,6 +1781,8 @@ module Todos
       parser.on("--project ID") { |value| options[:project] = value } if allowed[:project]
       parser.on("--assignee EMAIL") { |value| options[:assignee] = value } if allowed[:assignee]
       parser.on("--email EMAIL") { |value| options[:email] = value } if allowed[:email]
+      parser.on("--owner-email EMAIL", "Agent key: target an inbox the server allows") { |value| options[:owner_email] = value } if allowed[:owner_email]
+      parser.on("--cursor CURSOR", "Inbox list: next_cursor from the previous page") { |value| options[:cursor] = value } if allowed[:cursor]
       parser.on("--area ID") { |value| options[:area] = value } if allowed[:area]
       parser.on("--url URL", "The https URL a webhook posts to") { |value| options[:url] = value.strip } if allowed[:url]
       parser.on("--events TYPES", "Comma list of event types, or *") { |value| options[:events] = event_types(value) } if allowed[:events]
@@ -1743,7 +1824,7 @@ module Todos
       parser.on("--notes TEXT") { |value| options[:notes] = value } if allowed[:notes]
       parser.on("--note TEXT") { |value| options[:note] = value } if allowed[:note]
       parser.on("--file PATH", "Attach a file (repeatable)") { |value| (options[:files] ||= []) << value } if allowed[:files]
-      parser.on("--as NAME", "tasks comment: show the comment as this agent name (an API key write), not as the key's owner") { |value| options[:as] = value.strip } if allowed[:as]
+      parser.on("--as NAME", "API-key write: show this agent_name; the key's owner remains the author") { |value| options[:as] = value.strip } if allowed[:as]
       parser.on("--option TEXT", "Question: a short answer to pick (repeatable, 0 to 6, recommended first)") { |value| (options[:options] ||= []) << value } if allowed[:option]
       parser.on("--allow-text", "Question: let the person answer in text as well") { options[:allow_text] = true } if allowed[:allow_text]
       parser.on("--to EMAIL", "Question: who to ask (default: whose turn it is on the to-do)") { |value| options[:to] = value.strip } if allowed[:to]
