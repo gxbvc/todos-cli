@@ -2,6 +2,16 @@
 # frozen_string_literal: true
 
 ROOT = File.dirname(File.realpath(__FILE__))
+
+# Test stop FIRST: before the .env file (the key) is read and before any network call.
+require File.join(ROOT, "lib", "todos", "test_stop")
+if Todos::TestStop.refuse?(ARGV)
+  require "json"
+  warn(Todos::TestStop.message(ARGV))
+  puts(JSON.generate(ok: false, error: Todos::TestStop.message(ARGV), code: Todos::TestStop::CODE))
+  exit(Todos::TestStop::EXIT_CODE)
+end
+
 env_file = File.join(ROOT, ".env")
 File.foreach(env_file, chomp: true) do |line|
   key, value = line.split("=", 2)

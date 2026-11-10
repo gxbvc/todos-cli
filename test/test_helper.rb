@@ -98,7 +98,9 @@ module CLITestHelpers
       "TODOS_ROUTE" => nil,
       "TODOS_ROUTE_COMMAND" => "/nonexistent/todos-cli-test-route-command",
       # The one-card-per-topic read (Overseer, Nov 5) is off unless a test turns it on.
-      "TODOS_SIMILAR_CHECK" => "0"
+      "TODOS_SIMILAR_CHECK" => "0",
+      # The test stop (GXB_TEST_NO_REAL_IO) is off unless a test turns it on.
+      "GXB_TEST_NO_REAL_IO" => nil
     }.merge(env)
     stdout, stderr, status = Open3.capture3(process_env, executable, *args, chdir: cwd, stdin_data: stdin)
     server.finish

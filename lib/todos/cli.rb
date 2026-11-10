@@ -11,6 +11,7 @@ require "uri"
 
 require "todos/client"
 require "todos/error"
+require "todos/test_stop"
 
 module Todos
   class CLI
@@ -241,7 +242,15 @@ module Todos
       title, status, project_id, project_title, user_id, assigner_id, url}. Never answers or comments.
     TEXT
 
-    def self.run(args, client: Client.new, out: $stdout, err: $stderr, input: $stdin)
+    def self.run(args, client: nil, out: $stdout, err: $stderr, input: $stdin)
+      # Test stop for callers of the library (the executable checks before it reads .env): no client is
+      # built and nothing is sent.
+      if TestStop.refuse?(args)
+        err.puts(TestStop.message(args))
+        out.puts(JSON.generate(ok: false, error: TestStop.message(args), code: TestStop::CODE))
+        return TestStop::EXIT_CODE
+      end
+      client ||= Client.new
       data = new(args, client: client, err: err, input: input).execute
       out.puts(JSON.generate(ok: true, data: data))
       0
