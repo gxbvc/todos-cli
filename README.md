@@ -479,6 +479,10 @@ text as a unified diff. With `--json`, it returns the whole reply:
 when, and how (`via` web, api, or link). The email text never reaches quality
 scoring, search, events, webhooks, or mail.
 
+### Password pull
+
+`todos-cli tasks password-pull ID --key FIELD --name NAME --to PATH` is used only through Security's hq wrapper. It saves one opted-in password answer to a new 0600 file with exclusive create. It never overwrites PATH and prints only `{"ok":true,"data":{"present":1,"length":N,"sha8":"..."}}`, never the value. Only a dedicated API key with `can_pull_passwords` may use the server route.
+
 ### Webhooks
 
 ```bash

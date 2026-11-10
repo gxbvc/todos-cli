@@ -73,6 +73,7 @@ module Todos
         todos-cli tasks link-expire <id> <link_id> --at DATE
         todos-cli tasks secret <id> --key KEY (--secret-file PATH | --secret-stdin) [--days N] [--keep-file]
         todos-cli tasks secret-wipe <id> --key KEY
+        todos-cli tasks password-pull ID --key FIELD --name NAME --to PATH
         todos-cli webhooks list
         todos-cli webhooks create --url URL [--events TYPE,TYPE|*] [--description TEXT]
         todos-cli webhooks update <id> [--url URL] [--events TYPE,TYPE|*] [--description TEXT] [--active true|false]
@@ -216,6 +217,8 @@ module Todos
       sha8) and the file is deleted afterwards unless --keep-file. Keep such files under
       ~/.config/gxb-handoff/. tasks secret-wipe <id> --key KEY wipes it now.
       Agents: run it through ~/projects/hq/bin/todos-secret
+      tasks password-pull is used only through Security's hq wrapper. It saves a one-time value
+      to a new 0600 file, never overwrites an existing path, and prints only length and sha8.
       Webhooks: todo.gxb.vc POSTs a signed event to your https URL when a to-do you can open changes.
       --events: task.created task.updated task.submitted task.approved task.reopened task.canceled
       task.blocked task.unblocked task.logged comment.created comment.deleted, or * (all, the default).
@@ -689,6 +692,7 @@ module Todos
       when "link-expire" then tasks_link_expire
       when "secret" then tasks_secret
       when "secret-wipe" then tasks_secret_wipe
+      when "password-pull" then tasks_password_pull
       else
         fail_usage!("Usage: todos-cli tasks <list|get|show|check|create|update|destroy|approve|send-back|star|plan|submit|reopen|cancel|block|unblock|remind|respond|comment|comments|ask|versions|email|link|links|unlink|link-expire|secret|secret-wipe>")
       end
@@ -1592,6 +1596,35 @@ module Todos
 
     # Wipe the doer's secret now (DELETE /tasks/:id/secrets/:key): the asker,
     # in any status.
+    def tasks_password_pull
+      id = secret_task_id!
+      options = quiet_secret_args { parse_options(@args, key: true, name: true, to: true) }
+      quiet_secret_args { ensure_no_args! }
+      key = secret_key!(options[:key])
+      name = required_option!(options[:name], "--name")
+      raise Error.new("--name must be lowercase letters, digits, or dashes (40 at most)", code: "INVALID_ARGUMENT") unless name.match?(/\A[a-z0-9][a-z0-9-]{0,39}\z/)
+      path = required_option!(options[:to], "--to")
+      file = File.open(path, File::WRONLY | File::CREAT | File::EXCL, 0o600)
+      begin
+        result = request(:post, "/tasks/#{id}/passwords/#{URI.encode_www_form_component(key)}/pull", body: { name: name })
+        value = result.is_a?(Hash) && result["value"]
+        raise Error.new("The pull reply did not contain a value", code: "INVALID_RESPONSE") unless value.is_a?(String)
+
+        file.write(value)
+        file.flush
+        { present: 1, length: value.length, sha8: Digest::SHA256.hexdigest(value)[0, 8] }
+      rescue StandardError
+        File.delete(path)
+        raise
+      ensure
+        file.close
+      end
+    rescue Errno::EEXIST
+      raise Error.new("Destination already exists", code: "INVALID_ARGUMENT")
+    rescue SystemCallError
+      raise Error.new("Cannot create destination file", code: "INVALID_ARGUMENT")
+    end
+
     def tasks_secret_wipe
       id = secret_task_id!
       options = parse_options(@args, key: true)
@@ -1827,12 +1860,13 @@ module Todos
       parser.on("--as NAME", "API-key write: show this agent_name; the key's owner remains the author") { |value| options[:as] = value.strip } if allowed[:as]
       parser.on("--option TEXT", "Question: a short answer to pick (repeatable, 0 to 6, recommended first)") { |value| (options[:options] ||= []) << value } if allowed[:option]
       parser.on("--allow-text", "Question: let the person answer in text as well") { options[:allow_text] = true } if allowed[:allow_text]
-      parser.on("--to EMAIL", "Question: who to ask (default: whose turn it is on the to-do)") { |value| options[:to] = value.strip } if allowed[:to]
+      parser.on("--to VALUE", "Question recipient or password-pull destination path") { |value| options[:to] = value.strip } if allowed[:to]
       parser.on("--choice TEXT", "Question answer: the picked option") { |value| options[:choice] = value } if allowed[:choice]
       parser.on("--text TEXT", "Question answer: free text") { |value| options[:text] = value } if allowed[:text]
       parser.on("--asked-by WHO", "questions list: me shows the questions I asked") { |value| options[:asked_by] = value.strip } if allowed[:asked_by]
       parser.on("--reason TEXT") { |value| options[:reason] = value } if allowed[:reason]
       parser.on("--days N", "Link or secret: days until it ends (1 to 30)") { |value| options[:days] = link_days(value) } if allowed[:days]
+      parser.on("--name NAME", "Password pull: the opt-in name") { |value| options[:name] = value } if allowed[:name]
       parser.on("--key KEY", "Secret: the field key") { |value| options[:key] = value } if allowed[:key]
       parser.on("--secret-file PATH", "Secret: read the value from this 0600 file") { |value| options[:secret_file] = value } if allowed[:secret_file]
       parser.on("--secret-stdin", "Secret: read the value from stdin") { options[:secret_stdin] = true } if allowed[:secret_stdin]
