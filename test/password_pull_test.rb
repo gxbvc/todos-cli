@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "test_helper"
+require "minitest/mock"
 require "digest"
 require "fileutils"
 require "stringio"
@@ -116,6 +117,92 @@ class PasswordPullCliTest < Minitest::Test
     assert_match(/\.destination\.key\.pull-/, result["kept"])
     assert_equal VALUE, File.read(result["kept"])
     refute File.exist?(@path)
+    refute_includes output.string + errors.string, VALUE
+  end
+
+  def test_write_or_fsync_failure_keeps_private_temp_even_if_empty_or_partial
+    [ :write, :fsync ].each do |failure|
+      server = StubServer.new({ body: JSON.generate(value: VALUE) })
+      output = StringIO.new
+      errors = StringIO.new
+      original_open = File.method(:open)
+      File.stub(:open, lambda { |path, *args, &block|
+        opened = original_open.call(path, *args, &block)
+        if path.to_s.include?(".destination.key.pull-")
+          if failure == :write
+            opened.define_singleton_method(:write) do |content|
+              super(content.byteslice(0, 3))
+              raise Errno::ENOSPC
+            end
+          else
+            opened.define_singleton_method(:fsync) { raise Errno::EIO }
+          end
+        end
+        opened
+      }) do
+        status = Todos::CLI.run([ "tasks", "password-pull", "743", "--key", "vendor_password",
+                                  "--name", "vendor-key", "--to", @path ],
+                                client: Todos::Client.new(base_url: server.url, api_key: "test-key"), out: output, err: errors)
+        assert_equal 1, status
+      end
+      server.finish
+      result = JSON.parse(output.string)
+      assert_equal "PULL_FILE_KEPT", result["code"]
+      assert_match(/empty or partial/, result["error"])
+      assert_equal VALUE.length, result["length"]
+      assert_equal Digest::SHA256.hexdigest(VALUE)[0, 8], result["sha8"]
+      assert_equal(failure == :write ? VALUE.byteslice(0, 3) : VALUE, File.read(result["kept"]))
+      assert_equal 0o600, File.stat(result["kept"]).mode & 0o777
+      refute File.exist?(@path)
+      refute_includes output.string + errors.string, VALUE
+      File.unlink(result["kept"])
+    end
+  end
+
+  def test_temp_unlink_failure_after_link_reports_success_and_kept_temp
+    server = StubServer.new({ body: JSON.generate(value: VALUE) })
+    output = StringIO.new
+    errors = StringIO.new
+    original_unlink = File.method(:unlink)
+    File.stub(:unlink, lambda { |path|
+      raise Errno::EACCES if path.to_s.include?(".destination.key.pull-")
+      original_unlink.call(path)
+    }) do
+      status = Todos::CLI.run([ "tasks", "password-pull", "743", "--key", "vendor_password",
+                                "--name", "vendor-key", "--to", @path ],
+                              client: Todos::Client.new(base_url: server.url, api_key: "test-key"), out: output, err: errors)
+      assert_equal 0, status
+    end
+    server.finish
+    result = JSON.parse(output.string)
+    assert_equal true, result["ok"]
+    assert_equal VALUE, File.read(@path)
+    kept = Dir.glob(File.join(@dir, ".destination.key.pull-*")).fetch(0)
+    assert_includes result["data"]["cleanup_warning"], kept
+    assert_equal VALUE, File.read(kept)
+    refute_includes output.string + errors.string, VALUE
+  end
+
+  def test_directory_fsync_failure_after_link_reports_success
+    server = StubServer.new({ body: JSON.generate(value: VALUE) })
+    output = StringIO.new
+    errors = StringIO.new
+    original_open = File.method(:open)
+    File.stub(:open, lambda { |path, *args, &block|
+      raise Errno::EIO if path == @dir && block
+      original_open.call(path, *args, &block)
+    }) do
+      status = Todos::CLI.run([ "tasks", "password-pull", "743", "--key", "vendor_password",
+                                "--name", "vendor-key", "--to", @path ],
+                              client: Todos::Client.new(base_url: server.url, api_key: "test-key"), out: output, err: errors)
+      assert_equal 0, status
+    end
+    server.finish
+    result = JSON.parse(output.string)
+    assert_equal true, result["ok"]
+    assert_includes result["data"]["cleanup_warning"], @dir
+    assert_equal VALUE, File.read(@path)
+    assert_empty Dir.glob(File.join(@dir, ".destination.key.pull-*"))
     refute_includes output.string + errors.string, VALUE
   end
 

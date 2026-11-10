@@ -1628,22 +1628,45 @@ module Todos
       end
 
       summary = { "length" => value.length, "sha8" => Digest::SHA256.hexdigest(value)[0, 8] }
+      write_error = nil
       begin
         file.write(value)
         file.flush
         file.fsync
+      rescue SystemCallError, IOError => error
+        write_error = error
       ensure
-        file.close unless file.closed?
+        begin
+          file.close unless file.closed?
+        rescue SystemCallError, IOError => error
+          write_error ||= error
+        end
       end
+      if write_error
+        raise Error.new("Could not write or sync the password pull; kept temp may be empty or partial",
+                        code: "PULL_FILE_KEPT", details: summary.merge("kept" => temp))
+      end
+
       begin
         File.link(temp, path)
       rescue SystemCallError
         raise Error.new("Could not install password pull; the private temp file was kept", code: "PULL_FILE_KEPT",
                         details: summary.merge("kept" => temp))
       end
-      File.unlink(temp)
-      File.open(directory, File::RDONLY) { |dir| dir.fsync }
-      { present: 1, length: summary["length"], sha8: summary["sha8"] }
+      result = { present: 1, length: summary["length"], sha8: summary["sha8"] }
+      warnings = []
+      begin
+        File.unlink(temp)
+      rescue SystemCallError
+        warnings << "Could not remove private temp file: #{temp}"
+      end
+      begin
+        File.open(directory, File::RDONLY) { |dir| dir.fsync }
+      rescue SystemCallError
+        warnings << "Could not sync destination directory: #{directory}"
+      end
+      result[:cleanup_warning] = warnings.join("; ") if warnings.any?
+      result
     rescue Errno::EEXIST
       raise Error.new("Destination already exists", code: "INVALID_ARGUMENT")
     rescue SystemCallError
