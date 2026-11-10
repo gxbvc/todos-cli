@@ -54,6 +54,20 @@ class InboxTest < Minitest::Test
     assert_equal "/inbox_threads.json?cursor=eyJvIjoyfQ&limit=1", requests.pop[:target]
   end
 
+  def test_list_filters_status_and_sorts_by_activity
+    %w[needs_processing processed all].each do |filter|
+      page = { items: [{ id: "12", status: filter }], next_cursor: nil }
+      server = StubServer.new(body: JSON.generate(page))
+      output, status, requests = run_inbox(server, "inbox", "list", "--cursor", "next", "--limit", "3",
+                                           "--status", filter, "--sort", "activity")
+      assert_equal 0, status
+      assert_equal JSON.parse(JSON.generate(page)), output["data"]
+      request = requests.pop
+      assert_equal ["GET", "/inbox_threads.json?cursor=next&limit=3&status=#{filter}&sort=activity"],
+                   request.values_at(:method, :target)
+    end
+  end
+
   def test_show_and_message_use_bound_thread_routes
     server = StubServer.new(body: JSON.generate(id: "12", messages: [{ body: "First" }]))
     output, status, requests = run_inbox(server, "inbox", "show", "12")
@@ -79,14 +93,31 @@ class InboxTest < Minitest::Test
     end
   end
 
+  def test_process_marks_thread_processed_and_prints_only_processing_fields
+    reply = { id: "12", status: "processed", processed_at: "2026-11-10T12:00:00Z", title: "Capture" }
+    server = StubServer.new(body: JSON.generate(reply))
+    output, status, requests = run_inbox(server, "inbox", "process", "12")
+    assert_equal 0, status
+    assert_equal({ "id" => "12", "status" => "processed", "processed_at" => "2026-11-10T12:00:00Z" }, output["data"])
+    request = requests.pop
+    assert_equal ["PATCH", "/inbox_threads/12.json"], request.values_at(:method, :target)
+    assert_equal({ "status" => "processed" }, json_body(request))
+    assert_equal "application/json", request[:headers]["content-type"]
+    assert_equal "Bearer test-key", request[:headers]["authorization"]
+  end
+
   def test_bad_ids_missing_bodies_kinds_and_extra_arguments_never_request
     cases = [
       ["inbox", "show", "../12"], ["inbox", "show", ""], ["inbox", "message", "12/no", "Body"],
+      ["inbox", "process", "12/no"], ["inbox", "process"], ["inbox", "process", "12", "Extra"],
       ["inbox", "create"], ["inbox", "create", "  "], ["inbox", "message", "12"],
       ["inbox", "message", "12", "  "], ["inbox", "create", "Body", "--kind", "proposal"],
       ["inbox", "create", "Body", "Extra"], ["inbox", "show", "12", "Extra"],
       ["inbox", "message", "12", "Body", "Extra"], ["inbox", "list", "Extra"],
-      ["inbox", "list", "--limit", "0"], ["inbox", "create", "@/nonexistent/inbox.md"],
+      ["inbox", "list", "--limit", "0"], ["inbox", "list", "--status", "open"],
+      ["inbox", "list", "--status", "done"], ["inbox", "list", "--status", ""],
+      ["inbox", "list", "--sort", "priority"], ["inbox", "list", "--sort", ""],
+      ["inbox", "create", "@/nonexistent/inbox.md"],
       ["inbox", "create", "Body", "--owner-email", "   "]
     ]
     cases.each do |args|
@@ -122,10 +153,21 @@ class InboxTest < Minitest::Test
     assert_equal 1, requests.size
   end
 
+  def test_process_preserves_owner_refusal
+    server = StubServer.new(status: 403, body: JSON.generate(error: "Only the person who owns this inbox thread can change it."))
+    output, status, requests = run_inbox(server, "inbox", "process", "88")
+    assert_equal 1, status
+    assert_equal "HTTP_403", output["code"]
+    assert_equal ["PATCH", "/inbox_threads/88.json"], requests.pop.values_at(:method, :target)
+  end
+
   def test_help_lists_inbox_commands_and_scope
     output, status, requests = run_inbox(StubServer.new, "help")
     assert_equal 0, status
-    %w[create list show message].each { |subcommand| assert_includes output.dig("data", "usage"), "inbox #{subcommand}" }
+    %w[create list show message process].each { |subcommand| assert_includes output.dig("data", "usage"), "inbox #{subcommand}" }
+    assert_includes output.dig("data", "usage"), "--status needs_processing|processed|all"
+    assert_includes output.dig("data", "usage"), "--sort activity"
+    assert_includes output.dig("data", "usage"), "Reply first (inbox message), then inbox process. A later message from a person puts it back in the queue."
     assert_includes output.dig("data", "usage"), "Only an agent key may use"
     assert_empty requests
 

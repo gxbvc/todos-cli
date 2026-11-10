@@ -17,6 +17,7 @@ module Todos
     STATUSES = %w[open submitted approved canceled blocked].freeze
     PROJECT_STATUSES = %w[active waiting someday completed].freeze
     INBOX_KINDS = %w[voice_memo meeting email text chat note].freeze
+    INBOX_STATUSES = %w[needs_processing processed all].freeze
     USAGE = <<~TEXT.freeze
       Usage:
         todos-cli me
@@ -37,9 +38,10 @@ module Todos
         todos-cli invites accept <id> [--area ID]
         todos-cli contexts
         todos-cli inbox create BODY|@file.md [-t TITLE] [--kind voice_memo|meeting|email|text|chat|note] [--owner-email EMAIL] [--as NAME]
-        todos-cli inbox list [--cursor CURSOR] [--limit N]
+        todos-cli inbox list [--cursor CURSOR] [--limit N] [--status needs_processing|processed|all] [--sort activity]
         todos-cli inbox show <id>
         todos-cli inbox message <id> BODY|@file.md [--as NAME]
+        todos-cli inbox process <id>
         todos-cli tasks list [--user <id|email>] [--project ID] [--status STATUS] [--context NAME,NAME] [--sort priority]
         todos-cli tasks get|show <id> [--user <id|email>]
         todos-cli tasks check -t TITLE [--description MARKDOWN|@file] [--schema JSON|@file]
@@ -166,6 +168,7 @@ module Todos
       --owner-email, subject to the server's access rules. --as sets agent_name on API-key writes;
       it does not change the author. inbox list returns {items, next_cursor}; pass next_cursor to
       --cursor for the next page. inbox show and message use the thread's bound access rules.
+      Reply first (inbox message), then inbox process. A later message from a person puts it back in the queue.
       tasks update without --user is the asker's edit (PATCH /tasks/:id); with --user, the admin's.
       Notes are comments now. tasks comment <id> "TEXT" (or @file.md, markdown) posts one as you: the
       person doing it, the person who asked, and the reviewer can comment in any status, and a comment
@@ -541,8 +544,9 @@ module Todos
       when "list" then inbox_list
       when "show" then inbox_show
       when "message" then inbox_message
+      when "process" then inbox_process
       else
-        fail_usage!("Usage: todos-cli inbox <create|list|show|message>")
+        fail_usage!("Usage: todos-cli inbox <create|list|show|message|process>")
       end
     end
 
@@ -568,11 +572,19 @@ module Todos
     end
 
     def inbox_list
-      options = parse_options(@args, cursor: true, limit: true)
+      options = parse_options(@args, cursor: true, limit: true, status: true, sort: true)
       ensure_no_args!
+      if options.key?(:status) && !INBOX_STATUSES.include?(options[:status])
+        raise Error.new("Inbox status must be one of: #{INBOX_STATUSES.join(', ')}", code: "INVALID_ARGUMENT")
+      end
+      if options.key?(:sort) && options[:sort] != "activity"
+        raise Error.new("Inbox sort must be activity", code: "INVALID_ARGUMENT")
+      end
       query = {}
       query[:cursor] = options[:cursor] if options.key?(:cursor)
       query[:limit] = options[:limit] if options.key?(:limit)
+      query[:status] = options[:status] if options.key?(:status)
+      query[:sort] = options[:sort] if options.key?(:sort)
       @client.request(:get, "/inbox_threads.json", query: query)
     end
 
@@ -593,6 +605,13 @@ module Todos
       payload = { body: body }
       payload[:agent_name] = options[:as] if options.key?(:as)
       request(:post, "/inbox_threads/#{id}/messages.json", body: payload)
+    end
+
+    def inbox_process
+      id = inbox_id!
+      ensure_no_args!
+      thread = request(:patch, "/inbox_threads/#{id}.json", body: { status: "processed" })
+      thread.slice("id", "status", "processed_at")
     end
 
     def inbox_id!

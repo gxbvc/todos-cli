@@ -100,10 +100,11 @@ todos-cli invites accept area-2
 ```bash
 todos-cli inbox create "Note to review" --kind note
 todos-cli inbox create @capture.md --owner-email christian@gxb.vc --as GXBot
-todos-cli inbox list --limit 20
-todos-cli inbox list --cursor CURSOR_FROM_NEXT_CURSOR
+todos-cli inbox list --limit 20 --status needs_processing --sort activity
+todos-cli inbox list --cursor CURSOR_FROM_NEXT_CURSOR --status processed
 todos-cli inbox show 12
 todos-cli inbox message 12 @reply.md --as GXBot
+todos-cli inbox process 12
 ```
 
 `inbox create` posts the first message using the API key's identity. It defaults
@@ -114,8 +115,12 @@ thread goes into the API key owner's inbox. Only an agent key can use
 `--owner-email`, subject to the server's access checks. `--as` sets the shown
 agent name on API-key messages, not the author. `inbox list` returns the
 server's `{items, next_cursor}`; pass `next_cursor` to `--cursor` for the next
-page. `inbox show` returns the full thread. Show and message use the thread's
-bound access rules. These commands do not create proposals or approve work.
+page. Filter with `--status needs_processing|processed|all`; `--sort activity`
+orders by latest person activity. `inbox show` returns the full thread. Show
+and message use the thread's bound access rules. Reply first (inbox message),
+then inbox process. A later message from a person puts it back in the queue.
+Only the thread owner can process it. Process prints its id, status, and
+processed_at. These commands do not create proposals or approve work.
 
 ### Kind
 
