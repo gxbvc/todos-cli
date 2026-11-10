@@ -4,6 +4,7 @@ require "digest"
 require "json"
 require "open3"
 require "optparse"
+require "securerandom"
 require "set"
 require "time"
 require "uri"
@@ -244,6 +245,7 @@ module Todos
     rescue Todos::Error => e
       err.puts(e.message)
       envelope = { ok: false, error: e.message, code: e.code }
+      envelope.merge!(e.details.slice("kept", "length", "sha8")) if e.code == "PULL_FILE_KEPT"
       # A create or edit the quality gate refused: say which checks failed and
       # how to fix each one, and keep the whole object for agents.
       quality = e.details && e.details["quality"]
@@ -1604,25 +1606,48 @@ module Todos
       name = required_option!(options[:name], "--name")
       raise Error.new("--name must be lowercase letters, digits, or dashes (40 at most)", code: "INVALID_ARGUMENT") unless name.match?(/\A[a-z0-9][a-z0-9-]{0,39}\z/)
       path = required_option!(options[:to], "--to")
-      file = File.open(path, File::WRONLY | File::CREAT | File::EXCL, 0o600)
+      directory = File.dirname(path)
+      if File.exist?(path) || File.symlink?(path)
+        raise Error.new("Destination already exists", code: "INVALID_ARGUMENT")
+      end
+      if File.symlink?(directory) || !File.directory?(directory)
+        raise Error.new("Destination directory must exist and cannot be a symlink", code: "INVALID_ARGUMENT")
+      end
+
+      temp = File.join(directory, ".#{File.basename(path)}.pull-#{SecureRandom.hex(12)}")
+      file = File.open(temp, File::WRONLY | File::CREAT | File::EXCL | File::NOFOLLOW, 0o600)
       begin
-        result = request(:post, "/tasks/#{id}/passwords/#{URI.encode_www_form_component(key)}/pull", body: { name: name })
+        result = @client.request(:post, "/tasks/#{id}/passwords/#{URI.encode_www_form_component(key)}/pull",
+                                 body: { name: name }, expected_status: 200)
         value = result.is_a?(Hash) && result["value"]
         raise Error.new("The pull reply did not contain a value", code: "INVALID_RESPONSE") unless value.is_a?(String)
+      rescue StandardError
+        file.close
+        File.unlink(temp)
+        raise
+      end
 
+      summary = { "length" => value.length, "sha8" => Digest::SHA256.hexdigest(value)[0, 8] }
+      begin
         file.write(value)
         file.flush
-        { present: 1, length: value.length, sha8: Digest::SHA256.hexdigest(value)[0, 8] }
-      rescue StandardError
-        File.delete(path)
-        raise
+        file.fsync
       ensure
-        file.close
+        file.close unless file.closed?
       end
+      begin
+        File.link(temp, path)
+      rescue SystemCallError
+        raise Error.new("Could not install password pull; the private temp file was kept", code: "PULL_FILE_KEPT",
+                        details: summary.merge("kept" => temp))
+      end
+      File.unlink(temp)
+      File.open(directory, File::RDONLY) { |dir| dir.fsync }
+      { present: 1, length: summary["length"], sha8: summary["sha8"] }
     rescue Errno::EEXIST
       raise Error.new("Destination already exists", code: "INVALID_ARGUMENT")
     rescue SystemCallError
-      raise Error.new("Cannot create destination file", code: "INVALID_ARGUMENT")
+      raise Error.new("Cannot write password pull file", code: "IO_ERROR")
     end
 
     def tasks_secret_wipe

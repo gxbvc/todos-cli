@@ -481,7 +481,7 @@ scoring, search, events, webhooks, or mail.
 
 ### Password pull
 
-`todos-cli tasks password-pull ID --key FIELD --name NAME --to PATH` is used only through Security's hq wrapper. It saves one opted-in password answer to a new 0600 file with exclusive create. It never overwrites PATH and prints only `{"ok":true,"data":{"present":1,"length":N,"sha8":"..."}}`, never the value. Only a dedicated API key with `can_pull_passwords` may use the server route.
+`todos-cli tasks password-pull ID --key FIELD --name NAME --to PATH` is used only through Security's hq wrapper. It saves one opted-in password answer to a new 0600 file with exclusive create. It refuses an existing path or symlinked destination directory. It writes to a private temporary file in the same directory, syncs it, and links it to PATH without overwriting. Success prints only `{"ok":true,"data":{"present":1,"length":N,"sha8":"..."}}`, never the value. If the final link fails, the error names the retained private temp path and its length and sha8 so the consumed answer can be recovered. Only a dedicated API key with `can_pull_passwords` may use the server route.
 
 ### Webhooks
 
