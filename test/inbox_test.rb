@@ -68,6 +68,26 @@ class InboxTest < Minitest::Test
     end
   end
 
+  def test_propose_posts_kind_and_exact_payload
+    server = StubServer.new(status: 201, body: JSON.generate(id: "7", kind: "create_task", status: "pending"))
+    output, status, requests = run_inbox(server, "inbox", "propose", "12", "--kind", "create_task",
+                                         "--payload", '{"task":{"title":"Call the clinic","project_id":5}}', "--as", "Triage")
+    assert_equal 0, status
+    assert_equal "pending", output.dig("data", "status")
+    request = requests.pop
+    assert_equal ["POST", "/inbox_threads/12/proposals.json"], request.values_at(:method, :target)
+    assert_equal({ "kind" => "create_task", "payload" => { "task" => { "title" => "Call the clinic", "project_id" => 5 } },
+                   "agent_name" => "Triage" }, json_body(request))
+
+    [%w[--kind delete_everything --payload {}], %w[--kind comment --payload [1]], %w[--kind comment]].each do |extra|
+      server = StubServer.new
+      output, status, requests = run_inbox(server, "inbox", "propose", "12", *extra)
+      assert_equal 1, status, extra.inspect
+      refute_nil output["code"], extra.inspect
+      assert_empty requests, extra.inspect
+    end
+  end
+
   def test_show_and_message_use_bound_thread_routes
     server = StubServer.new(body: JSON.generate(id: "12", messages: [{ body: "First" }]))
     output, status, requests = run_inbox(server, "inbox", "show", "12")

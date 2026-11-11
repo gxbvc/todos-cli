@@ -43,6 +43,7 @@ module Todos
         todos-cli inbox show <id>
         todos-cli inbox message <id> BODY|@file.md [--as NAME]
         todos-cli inbox process <id>
+        todos-cli inbox propose <id> --kind create_task|update_task|cancel_task|comment|chain --payload JSON|@file.json [--as NAME]
         todos-cli tasks list [--user <id|email>] [--project ID] [--status STATUS] [--context NAME,NAME] [--sort priority]
         todos-cli tasks get|show <id> [--user <id|email>]
         todos-cli tasks check -t TITLE [--description MARKDOWN|@file] [--schema JSON|@file]
@@ -554,8 +555,9 @@ module Todos
       when "show" then inbox_show
       when "message" then inbox_message
       when "process" then inbox_process
+      when "propose" then inbox_propose
       else
-        fail_usage!("Usage: todos-cli inbox <create|list|show|message|process>")
+        fail_usage!("Usage: todos-cli inbox <create|list|show|message|process|propose>")
       end
     end
 
@@ -614,6 +616,37 @@ module Todos
       payload = { body: body }
       payload[:agent_name] = options[:as] if options.key?(:as)
       request(:post, "/inbox_threads/#{id}/messages.json", body: payload)
+    end
+
+    # A proposed action on a capture (todo plan 59 batch D): the EXACT arguments
+    # of the normal path; only the thread's owner decides it, from a browser.
+    PROPOSAL_KINDS = %w[create_task update_task cancel_task comment chain].freeze
+
+    def inbox_propose
+      id = inbox_id!
+      options = parse_options(@args, kind: true, payload: true, as: true)
+      ensure_no_args!
+      kind = options[:kind].to_s
+      unless PROPOSAL_KINDS.include?(kind)
+        raise Error.new("--kind must be one of: #{PROPOSAL_KINDS.join(', ')}", code: "INVALID_ARGUMENT")
+      end
+      raise Error.new("--payload is required", code: "INVALID_ARGUMENT") unless options[:payload].is_a?(Hash)
+
+      body = { kind: kind, payload: options[:payload] }
+      body[:agent_name] = options[:as] if options.key?(:as)
+      request(:post, "/inbox_threads/#{id}/proposals.json", body: body)
+    end
+
+    def parse_proposal_payload(value)
+      source = value.start_with?("@") ? File.read(File.expand_path(value.delete_prefix("@"))) : value
+      parsed = JSON.parse(source)
+      raise Error.new("--payload must be a JSON object", code: "INVALID_ARGUMENT") unless parsed.is_a?(Hash)
+
+      parsed
+    rescue Errno::ENOENT => e
+      raise Error.new("Payload file not found: #{e.message}", code: "FILE_NOT_FOUND")
+    rescue JSON::ParserError => e
+      raise Error.new("Invalid payload JSON: #{e.message}", code: "INVALID_JSON")
     end
 
     def inbox_process
@@ -1918,6 +1951,7 @@ module Todos
       parser.on("--json", "Print the whole reply (tasks email: the revisions too)") { options[:json] = true } if allowed[:json]
       parser.on("--status STATUS") { |value| options[:status] = value } if allowed[:status]
       parser.on("--kind KIND") { |value| options[:kind] = value } if allowed[:kind]
+      parser.on("--payload JSON", "Proposal payload: a JSON object, or @file.json") { |value| options[:payload] = parse_proposal_payload(value) } if allowed[:payload]
       parser.on("--blocked-by IDS", "What this to-do waits on: to-do ids, comma list (replaces the set); \"\" clears") { |value| options[:blocked_by] = value } if allowed[:blocked_by]
       parser.on("--before DATE", "Logbook: the 7 days before this day (YYYY-MM-DD)") { |value| options[:before] = plan_date(value, "--before") } if allowed[:before]
       parser.on("--all", "Logbook: every week") { options[:all] = true } if allowed[:all]

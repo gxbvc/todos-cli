@@ -27,6 +27,7 @@ todos-cli inbox list [--cursor CURSOR] [--limit N] [--status needs_processing|pr
 todos-cli inbox show <id>
 todos-cli inbox message <id> BODY|@file.md [--as NAME]
 todos-cli inbox process <id>
+todos-cli inbox propose <id> --kind create_task|update_task|cancel_task|comment|chain --payload JSON|@file.json [--as NAME]
 todos-cli tasks list [--user <id|email>] [--project ID] [--status open|submitted|approved|canceled] [--context NAME,NAME] [--sort priority]
 todos-cli tasks get|show <id> [--user <id|email>]
 todos-cli tasks check -t TITLE [--description MARKDOWN|@file] [--schema JSON|@file]
