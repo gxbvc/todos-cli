@@ -33,6 +33,7 @@ module Todos
         todos-cli areas invite <id> --email EMAIL
         todos-cli projects list [--user <id|email>]
         todos-cli projects create -t TITLE [--area ID]
+        todos-cli projects cover <project id> IMAGE.jpg|png|webp|gif   (owner or admin; replaces; 10 MB max)
         todos-cli projects create --user <id|email> -t TITLE [--area ID] [--status STATUS] [--position N]
         todos-cli projects invite <id> --email EMAIL
         todos-cli invites list
@@ -417,8 +418,30 @@ module Todos
       when "list" then projects_list
       when "create" then projects_create
       when "invite" then projects_invite
+      when "cover" then projects_cover
       else
-        fail_usage!("Usage: todos-cli projects <list|create|invite>")
+        fail_usage!("Usage: todos-cli projects <list|create|invite|cover>")
+      end
+    end
+
+    # The project's cover image (plan 54): POST /projects/:id/cover.json, multipart `image`, 10 MB at most; the
+    # owner or the admin; a second post replaces it. The server checks the bytes (an image only).
+    COVER_TYPES = { ".jpg" => "image/jpeg", ".jpeg" => "image/jpeg", ".png" => "image/png", ".webp" => "image/webp", ".gif" => "image/gif" }.freeze
+
+    def projects_cover
+      id = required_positional!("project id")
+      raise Error.new("Project id must be numeric", code: "INVALID_ARGUMENT") unless id.match?(/\A\d+\z/)
+
+      path = File.expand_path(required_positional!("image path"))
+      ensure_no_args!
+      raise Error.new("File not found: #{path}", code: "INVALID_ARGUMENT") unless File.file?(path)
+      raise Error.new("Cover is over 10 MB", code: "INVALID_ARGUMENT") if File.size(path) > 10 * 1024 * 1024
+
+      type = COVER_TYPES[File.extname(path).downcase]
+      raise Error.new("Cover must be .jpg, .png, .webp or .gif", code: "INVALID_ARGUMENT") unless type
+
+      File.open(path, "rb") do |io|
+        @client.request(:post, "/projects/#{id}/cover.json", form: [ [ "image", io, { filename: File.basename(path), content_type: type } ] ])
       end
     end
 

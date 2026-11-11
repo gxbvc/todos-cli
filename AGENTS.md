@@ -16,6 +16,7 @@ todos-cli areas list --user <id|email>
 todos-cli areas create --user <id|email> -t TITLE [--position N] [--active true|false]
 todos-cli areas invite <id> --email EMAIL
 todos-cli projects list [--user <id|email>]
+todos-cli projects cover <project id> IMAGE.jpg|png|webp|gif
 todos-cli projects create --user <id|email> -t TITLE [--area ID] [--status active|waiting|someday|completed] [--position N]
 todos-cli projects create -t TITLE [--area ID]
 todos-cli projects invite <id> --email EMAIL
