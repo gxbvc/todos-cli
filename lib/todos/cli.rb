@@ -80,6 +80,7 @@ module Todos
         todos-cli tasks secret <id> --key KEY (--secret-file PATH | --secret-stdin) [--days N] [--keep-file]
         todos-cli tasks secret-wipe <id> --key KEY
         todos-cli tasks password-pull ID --key FIELD --name NAME --to PATH
+        todos-cli tasks password-wipe ID --key FIELD
         todos-cli webhooks list
         todos-cli webhooks create --url URL [--events TYPE,TYPE|*] [--description TEXT]
         todos-cli webhooks update <id> [--url URL] [--events TYPE,TYPE|*] [--description TEXT] [--active true|false]
@@ -224,6 +225,8 @@ module Todos
       sha8) and the file is deleted afterwards unless --keep-file. Keep such files under
       ~/.config/gxb-handoff/. tasks secret-wipe <id> --key KEY wipes it now.
       Agents: run it through ~/projects/hq/bin/todos-secret
+      tasks password-wipe ID --key FIELD erases a stored password answer on a to-do in any status.
+      The reviewer or admin may use a browser session or API key. The value is never returned.
       tasks password-pull is used only through Security's hq wrapper. It saves a one-time value
       to a new 0600 file, never overwrites an existing path, and prints only length and sha8.
       Webhooks: todo.gxb.vc POSTs a signed event to your https URL when a to-do you can open changes.
@@ -779,6 +782,7 @@ module Todos
       when "secret" then tasks_secret
       when "secret-wipe" then tasks_secret_wipe
       when "password-pull" then tasks_password_pull
+      when "password-wipe" then tasks_password_wipe
       else
         fail_usage!("Usage: todos-cli tasks <list|get|show|check|create|update|destroy|approve|send-back|star|plan|submit|reopen|cancel|block|unblock|remind|respond|comment|comments|ask|versions|email|link|links|unlink|link-expire|secret|secret-wipe>")
       end
@@ -1755,6 +1759,15 @@ module Todos
       raise Error.new("Destination already exists", code: "INVALID_ARGUMENT")
     rescue SystemCallError
       raise Error.new("Cannot write password pull file", code: "IO_ERROR")
+    end
+
+    def tasks_password_wipe
+      id = secret_task_id!
+      options = parse_options(@args, key: true)
+      ensure_no_args!
+      key = secret_key!(options[:key])
+      result = request(:delete, "/tasks/#{id}/passwords/#{URI.encode_www_form_component(key)}")
+      { wiped: result.fetch("wiped"), field_key: result.fetch("field_key") }
     end
 
     def tasks_secret_wipe

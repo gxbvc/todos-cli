@@ -486,6 +486,8 @@ scoring, search, events, webhooks, or mail.
 
 ### Password pull
 
+`todos-cli tasks password-wipe ID --key FIELD` removes one password answer in any status for a reviewer or admin. It reports `{wiped,field_key}` and never returns the value.
+
 `todos-cli tasks password-pull ID --key FIELD --name NAME --to PATH` is used only through Security's hq wrapper. It saves one opted-in password answer to a new 0600 file with exclusive create. It refuses an existing path or symlinked destination directory. It writes to a private temporary file in the same directory, syncs it, and links it to PATH without overwriting. Success prints only `present`, `length`, and `sha8`, never the value. If temp cleanup or directory sync fails after installation, success also includes `cleanup_warning` with the affected path. If writing, syncing the temp, or linking fails, the error names the retained private temp path and its length and sha8. After a write or sync failure, the temp may be empty or partial. Only a dedicated API key with `can_pull_passwords` may use the server route.
 
 ### Webhooks
