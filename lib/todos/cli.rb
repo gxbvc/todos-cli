@@ -31,20 +31,40 @@ module Todos
         todos-cli areas list --user <id|email>
         todos-cli areas create --user <id|email> -t TITLE [--position N] [--active true|false]
         todos-cli areas invite <id> --email EMAIL
+        todos-cli areas update <id> [--emoji EMOJI] [--standard TEXT|@file]   (owner or admin; "" clears)
+        todos-cli areas cover <id> IMAGE.jpg|png|webp|gif | areas cover-remove <id>
+        todos-cli areas messages <id> [--order asc|desc] [--cursor C] [--limit N]
+        todos-cli areas post <id> TEXT|@file [--as NAME] | areas message-delete <id> <message_id>
         todos-cli projects list [--user <id|email>]
         todos-cli projects create -t TITLE [--area ID]
         todos-cli projects cover <project id> IMAGE.jpg|png|webp|gif   (owner or admin; replaces; 10 MB max)
         todos-cli projects create --user <id|email> -t TITLE [--area ID] [--status STATUS] [--position N]
         todos-cli projects invite <id> --email EMAIL
+        todos-cli projects invite-resend <id> <invite_id> | projects invite-revoke <id> <invite_id>
+        todos-cli projects update <id> [--emoji EMOJI] [--done-when TEXT|@file] [--manager-agent NAME]   (owner or admin; "" clears)
+        todos-cli projects cover-remove <id>
+        todos-cli projects archive <id> --confirm | projects restore <id> --confirm   (confirm the project with the person first)
+        todos-cli projects files <id> | projects upload <id> PATH... | projects file-url <id> <file_id> | projects file-delete <id> <file_id>
+        todos-cli projects messages <id> [--order asc|desc] [--cursor C] [--limit N]
+        todos-cli projects post <id> TEXT|@file [--as NAME] | projects message-delete <id> <message_id>
         todos-cli invites list
         todos-cli invites accept <id> [--area ID]
-        todos-cli contexts
+        todos-cli contexts [list]
+        todos-cli contexts create NAME [--description TEXT] | contexts update <id> [--name NAME] [--description TEXT]
+        todos-cli contexts delete <id> | contexts move <id> up|down
+        todos-cli notifications list [--cursor C] [--limit N] | notifications show <id>
+        todos-cli notifications read <id> [--unread] | notifications read-all [--project ID | --area ID]
+        todos-cli search WORDS [--sort priority|created_at|updated_at] [--direction asc|desc] [--cursor C] [--limit N]
+        todos-cli why [show] | why set TEXT|@file | why clear
+        todos-cli auto-approve list | auto-approve entries [RULE_ID]   (reads only)
+        todos-cli orgs list | orgs show <id> | orgs members <id>   (reads only)
         todos-cli inbox create BODY|@file.md [-t TITLE] [--kind voice_memo|meeting|email|text|chat|note] [--owner-email EMAIL] [--as NAME]
         todos-cli inbox list [--cursor CURSOR] [--limit N] [--status needs_processing|processed|all] [--sort activity]
         todos-cli inbox show <id>
         todos-cli inbox message <id> BODY|@file.md [--as NAME]
         todos-cli inbox process <id>
         todos-cli inbox propose <id> --kind create_task|update_task|cancel_task|comment|chain --payload JSON|@file.json [--as NAME]
+        todos-cli inbox proposals <id> [--cursor C] [--limit N]
         todos-cli tasks list [--user <id|email>] [--project ID] [--status STATUS] [--context NAME,NAME] [--sort priority]
         todos-cli tasks get|show <id> [--user <id|email>]
         todos-cli tasks check -t TITLE [--description MARKDOWN|@file] [--schema JSON|@file]
@@ -81,6 +101,10 @@ module Todos
         todos-cli tasks secret-wipe <id> --key KEY
         todos-cli tasks password-pull ID --key FIELD --name NAME --to PATH
         todos-cli tasks password-wipe ID --key FIELD
+        todos-cli tasks act <id> VERB [--option TEXT] [--note TEXT] [--field key=value]
+        todos-cli tasks log <id> | tasks log-all
+        todos-cli tasks read <id> [--through-comment ID] | tasks read-all (--project ID | --area ID)
+        todos-cli tasks lookup IDS   (comma list, in that order)
         todos-cli webhooks list
         todos-cli webhooks create --url URL [--events TYPE,TYPE|*] [--description TEXT]
         todos-cli webhooks update <id> [--url URL] [--events TYPE,TYPE|*] [--description TEXT] [--active true|false]
@@ -164,7 +188,7 @@ module Todos
       Set one when where or with what the person must be is clear: desk with the big screen
       and security key: office; a phone tap: phone; out in town: errands; a voice-only
       answer on a ride: bike; at home, no desk: home. List yours with todos-cli contexts
-      (the descriptions say what each means; make them on /settings). --context is the
+      (the descriptions say what each means; make them on /settings or with contexts create). --context is the
       member route only: with --user it is refused (the admin route cannot set another
       person's contexts).
       inbox create sends a first message as the API key's owner. The default kind is text; without
@@ -245,6 +269,23 @@ module Todos
       (the webhook type), kind, at, actor, via (web, api, oauth, system, or null), via_key (your key
       name, only on your own changes), from_status, to_status, data (the webhook keys), and task {id,
       title, status, project_id, project_title, user_id, assigner_id, url}. Never answers or comments.
+      projects update sets the project's emoji, its done-when line (the outcome that ends it), and
+      (GXB staff only) manager_agent, the herdr agent told about its changes. areas update sets an
+      area's emoji and standard line. projects archive takes the project off every member's board
+      (refused while open, submitted, or blocked to-dos remain); restore puts it back. Both need
+      --confirm: confirm the project and its id with the person first. projects files lists the
+      project's files; upload sends 1 to 10 (100 MB each, owner or admin); file-url gives a
+      short-lived link. messages, post, and message-delete are the chat on a project or an area;
+      post takes --as NAME like comments. tasks act does one verb from the to-do's actions list
+      (tasks get shows them): done, approve, request_changes, decline, choose (--option),
+      send, undo, got_it, accept, send_back, unblock; request_changes, decline and send_back need
+      --note; --field answers go in response. tasks log moves an approved to-do of mine to the
+      logbook; log-all does every one that is due. tasks read marks one to-do read (no event, no
+      mail); read-all marks a whole project or area. notifications read-all marks my
+      notifications read (an agent's call marks nothing). search finds my to-dos by title,
+      description, comments, and non-secret answers. why is my own principles text (2,000
+      characters at most). auto-approve and orgs are read only: rules and organization changes
+      are made by a person on todo.gxb.vc.
     TEXT
 
     def self.run(args, client: nil, out: $stdout, err: $stderr, input: $stdin)
@@ -330,6 +371,11 @@ module Todos
       when "inbox" then inbox
       when "questions" then questions
       when "webhooks" then webhooks
+      when "notifications" then notifications
+      when "search" then search
+      when "why" then why
+      when "auto-approve" then auto_approve
+      when "orgs", "organizations" then organizations
       when "help", "-h", "--help", nil then { usage: USAGE }
       else
         fail_usage!("Unknown command: #{command}")
@@ -378,8 +424,14 @@ module Todos
       when "list" then areas_list
       when "create" then areas_create
       when "invite" then areas_invite
+      when "update" then areas_update
+      when "cover" then areas_cover
+      when "cover-remove" then areas_cover_remove
+      when "messages" then chat_messages("area")
+      when "post" then chat_post("area")
+      when "message-delete" then chat_delete("area")
       else
-        fail_usage!("Usage: todos-cli areas <list|create|invite>")
+        fail_usage!("Usage: todos-cli areas <list|create|invite|update|cover|cover-remove|messages|post|message-delete>")
       end
     end
 
@@ -421,9 +473,22 @@ module Todos
       when "list" then projects_list
       when "create" then projects_create
       when "invite" then projects_invite
+      when "invite-resend" then projects_invite_member(:patch)
+      when "invite-revoke" then projects_invite_member(:delete)
       when "cover" then projects_cover
+      when "cover-remove" then projects_cover_remove
+      when "update" then projects_update
+      when "archive" then projects_archive
+      when "restore" then projects_archive(restore: true)
+      when "files" then projects_files
+      when "upload" then projects_upload
+      when "file-url" then projects_file_url
+      when "file-delete" then projects_file_delete
+      when "messages" then chat_messages("project")
+      when "post" then chat_post("project")
+      when "message-delete" then chat_delete("project")
       else
-        fail_usage!("Usage: todos-cli projects <list|create|invite|cover>")
+        fail_usage!("Usage: todos-cli projects <list|create|update|invite|invite-resend|invite-revoke|cover|cover-remove|archive|restore|files|upload|file-url|file-delete|messages|post|message-delete>")
       end
     end
 
@@ -533,17 +598,6 @@ module Todos
       end
     end
 
-    # My GTD contexts (plan 42): name, description, position. They are made
-    # on /settings; this lists them so an agent can pick --context names.
-    def contexts
-      subcommand = @args.shift
-      if subcommand
-        @args.unshift(subcommand)
-        fail_usage!("Usage: todos-cli contexts (list only; add, rename, and delete on /settings)")
-      end
-      request(:get, "/contexts.json")["contexts"]
-    end
-
     # Join the project (project-4), filed in one of my areas (--area) or my
     # Shared area; data is the project as projects.json shows it. Or join the
     # area (area-2), its projects filed in one of my areas (--area) or a new
@@ -582,8 +636,9 @@ module Todos
       when "message" then inbox_message
       when "process" then inbox_process
       when "propose" then inbox_propose
+      when "proposals" then inbox_proposals
       else
-        fail_usage!("Usage: todos-cli inbox <create|list|show|message|process|propose>")
+        fail_usage!("Usage: todos-cli inbox <create|list|show|message|process|propose|proposals>")
       end
     end
 
@@ -783,6 +838,12 @@ module Todos
       when "secret-wipe" then tasks_secret_wipe
       when "password-pull" then tasks_password_pull
       when "password-wipe" then tasks_password_wipe
+      when "act" then tasks_act
+      when "log" then tasks_log
+      when "log-all" then tasks_log_all
+      when "read" then tasks_read
+      when "read-all" then tasks_read_all
+      when "lookup" then tasks_lookup
       else
         fail_usage!("Usage: todos-cli tasks <list|get|show|check|create|update|destroy|approve|send-back|star|plan|submit|reopen|cancel|block|unblock|remind|respond|comment|comments|ask|versions|email|link|links|unlink|link-expire|secret|secret-wipe>")
       end
@@ -2030,6 +2091,15 @@ module Todos
       parser.on("--allow-external") { options[:allow_external] = true } if allowed[:allow_external]
       parser.on("--route NAME", "herdr agent name that hears about changes (plan 51); \"\" clears on update") { |value| options[:route] = value } if allowed[:route]
       parser.on("--no-route", "tasks create: send no route (do not read TODOS_ROUTE or run the route command)") { options[:no_route] = true } if allowed[:no_route]
+      parser.on("--emoji EMOJI", "One emoji; \"\" clears") { |value| options[:emoji] = value } if allowed[:emoji]
+      parser.on("--done-when TEXT", "The project's done-when line (500 characters at most), or @file; \"\" clears") { |value| options[:done_when] = inline_or_file_text(value, "Done-when") } if allowed[:done_when]
+      parser.on("--manager-agent NAME", "herdr agent told about the project's changes (GXB staff only); \"\" clears") { |value| options[:manager_agent] = value.strip } if allowed[:manager_agent]
+      parser.on("--standard TEXT", "The area's line under its title (500 characters at most), or @file; \"\" clears") { |value| options[:standard] = inline_or_file_text(value, "Standard") } if allowed[:standard]
+      parser.on("--confirm", "The person confirmed this project and its id") { options[:confirm] = true } if allowed[:confirm]
+      parser.on("--order ORDER", "asc (oldest first, the default) or desc") { |value| options[:order] = value } if allowed[:order]
+      parser.on("--unread", "Mark unread instead of read") { options[:unread] = true } if allowed[:unread]
+      parser.on("--through-comment ID", "Read through this comment, not the newest") { |value| options[:through_comment] = positive_integer(value, "--through-comment") } if allowed[:through_comment]
+      parser.on("--direction DIR", "asc or desc, with --sort created_at or updated_at") { |value| options[:direction] = value } if allowed[:direction]
       parser.parse!(args)
       options
     rescue OptionParser::ParseError => e
@@ -2376,3 +2446,5 @@ module Todos
     end
   end
 end
+
+require "todos/api_commands"

@@ -15,7 +15,11 @@ class TestStopTest < Minitest::Test
     %w[me], %w[users list], %w[users show 7], %w[board], %w[logbook], %w[events], %w[areas list --user 7],
     %w[projects list], %w[invites list], %w[contexts], %w[inbox list], %w[inbox show 3], %w[tasks list],
     %w[tasks get 5], %w[tasks show 5], %w[tasks check -t X], %w[tasks comments 5], %w[tasks versions 5],
-    %w[tasks email 5], %w[tasks links 5], %w[questions list], %w[webhooks list], %w[webhooks deliveries 4]
+    %w[tasks email 5], %w[tasks links 5], %w[questions list], %w[webhooks list], %w[webhooks deliveries 4],
+    %w[contexts list], %w[areas messages 1], %w[projects files 1], %w[projects file-url 1 2], %w[projects messages 1],
+    %w[inbox proposals 3], %w[tasks lookup 1,2], %w[notifications list], %w[notifications show 1], %w[search words],
+    %w[why], %w[why show], %w[auto-approve list], %w[auto-approve entries], %w[orgs list], %w[orgs show 1],
+    %w[orgs members 1], %w[organizations list]
   ].freeze
   NAMED_WRITES = [
     %w[tasks create], %w[tasks update], %w[tasks destroy], %w[tasks submit], %w[tasks approve],
@@ -25,7 +29,13 @@ class TestStopTest < Minitest::Test
     %w[tasks password-pull], %w[users remind], %w[areas create], %w[areas invite], %w[projects create],
     %w[projects invite], %w[invites accept], %w[inbox create], %w[inbox message], %w[inbox process],
     %w[questions answer], %w[questions withdraw], %w[webhooks create], %w[webhooks update], %w[webhooks delete],
-    %w[webhooks rotate], %w[webhooks test]
+    %w[webhooks rotate], %w[webhooks test],
+    %w[projects update], %w[projects archive], %w[projects restore], %w[projects upload], %w[projects file-delete],
+    %w[projects post], %w[projects message-delete], %w[projects cover-remove], %w[projects invite-resend],
+    %w[projects invite-revoke], %w[areas update], %w[areas cover], %w[areas cover-remove], %w[areas post],
+    %w[contexts create], %w[contexts update], %w[contexts delete], %w[contexts move], %w[notifications read],
+    %w[notifications read-all], %w[tasks act], %w[tasks log], %w[tasks log-all], %w[tasks read], %w[tasks read-all],
+    %w[why set], %w[why clear]
   ].freeze
 
   def on

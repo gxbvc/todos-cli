@@ -15,14 +15,32 @@ todos-cli logbook [--kind logged|canceled] [--before DATE | --all]
 todos-cli areas list --user <id|email>
 todos-cli areas create --user <id|email> -t TITLE [--position N] [--active true|false]
 todos-cli areas invite <id> --email EMAIL
+todos-cli areas update <id> [--emoji EMOJI] [--standard TEXT|@file]
+todos-cli areas cover <id> IMAGE | areas cover-remove <id>
+todos-cli areas messages <id> [--order asc|desc] [--cursor C] [--limit N] | areas post <id> TEXT|@file [--as NAME] | areas message-delete <id> <message_id>
 todos-cli projects list [--user <id|email>]
-todos-cli projects cover <project id> IMAGE.jpg|png|webp|gif
+todos-cli projects update <id> [--emoji EMOJI] [--done-when TEXT|@file] [--manager-agent NAME]
+todos-cli projects cover <project id> IMAGE.jpg|png|webp|gif | projects cover-remove <id>
+todos-cli projects archive <id> --confirm | projects restore <id> --confirm
+todos-cli projects files <id> | projects upload <id> PATH... | projects file-url <id> <file_id> | projects file-delete <id> <file_id>
+todos-cli projects messages <id> [--order asc|desc] | projects post <id> TEXT|@file [--as NAME] | projects message-delete <id> <message_id>
+todos-cli projects invite-resend <id> <invite_id> | projects invite-revoke <id> <invite_id>
 todos-cli projects create --user <id|email> -t TITLE [--area ID] [--status active|waiting|someday|completed] [--position N]
 todos-cli projects create -t TITLE [--area ID]
 todos-cli projects invite <id> --email EMAIL
 todos-cli invites list
 todos-cli invites accept <id> [--area ID]
-todos-cli contexts
+todos-cli contexts [list] | contexts create NAME [--description TEXT] | contexts update <id> [--name NAME] [--description TEXT] | contexts delete <id> | contexts move <id> up|down
+todos-cli notifications list|show <id>|read <id> [--unread]|read-all [--project ID | --area ID]
+todos-cli search WORDS [--sort priority|created_at|updated_at] [--direction asc|desc] [--cursor C] [--limit N]
+todos-cli why [show] | why set TEXT|@file | why clear
+todos-cli auto-approve list | auto-approve entries [RULE_ID]
+todos-cli orgs list | orgs show <id> | orgs members <id>
+todos-cli inbox proposals <id>
+todos-cli tasks act <id> VERB [--option TEXT] [--note TEXT] [--field key=value]
+todos-cli tasks log <id> | tasks log-all
+todos-cli tasks read <id> [--through-comment ID] | tasks read-all (--project ID | --area ID)
+todos-cli tasks lookup IDS
 todos-cli inbox create BODY|@file.md [-t TITLE] [--kind voice_memo|meeting|email|text|chat|note] [--owner-email EMAIL] [--as NAME]
 todos-cli inbox list [--cursor CURSOR] [--limit N] [--status needs_processing|processed|all] [--sort activity]
 todos-cli inbox show <id>

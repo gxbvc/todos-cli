@@ -550,6 +550,43 @@ webhook; any other id is `HTTP_404`. The URL must be `https://` and resolve to
 a public address. todo.gxb.vc cannot reach a Mac on a home network: use a
 public https URL (for example Tailscale Funnel or a server).
 
+### Project and area details, files, chat, notifications, search (Nov 2026)
+
+```bash
+todos-cli projects update 428 --emoji "♾️" --done-when @done.md     # "" clears a field
+todos-cli projects update 428 --manager-agent admin                  # GXB staff only
+todos-cli areas update 108 --standard "Agents that ship"
+todos-cli areas cover 108 cover.png
+todos-cli projects archive 428 --confirm                              # confirm with the person first
+todos-cli projects files 428
+todos-cli projects upload 428 report.pdf notes.md                      # 1 to 10 files, 100 MB each
+todos-cli projects file-url 428 7                                     # a short-lived link
+todos-cli projects messages 428 --order desc --limit 20
+todos-cli projects post 428 "Status: waiting on upstream" --as "Misc"
+todos-cli contexts create garage --description "In the garage"
+todos-cli notifications list
+todos-cli notifications read-all --project 428
+todos-cli tasks read 5937
+todos-cli tasks act 5937 got_it
+todos-cli tasks log-all
+todos-cli tasks lookup 5933,5937
+todos-cli search "rpi trust" --sort updated_at
+todos-cli why set @why.md
+todos-cli inbox proposals 35
+todos-cli auto-approve entries
+todos-cli orgs members 1
+```
+
+These follow the routes in https://api.todo.gxb.vc/openapi.json. Project and
+area details, covers, files, archive and invite changes are for the owner or
+the admin. `projects archive` and `restore` refuse without `--confirm`,
+because they change every member's board. `tasks act` takes one verb from the
+to-do's `actions` list (`tasks get` shows them); `--option` is for `choose`,
+`--note` is required for `request_changes`, `decline` and `send_back`, and
+`--field` answers go in `response`. `notifications read-all` marks nothing when
+an agent calls it. `auto-approve` and `orgs` are read only: rules and
+organization changes need a person in a browser on todo.gxb.vc.
+
 ## How it works
 
 The command dispatcher uses Ruby's `OptionParser`. `Todos::Client` uses
